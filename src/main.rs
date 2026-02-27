@@ -1,8 +1,8 @@
+use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 
-use anyhow::Result;
 use clap::Parser;
 use walkdir::DirEntry;
 use walkdir::WalkDir;
@@ -14,6 +14,40 @@ struct Cli {
     /// Directories to search for CLAUDE.md files
     #[arg(default_value = ".")]
     paths: Vec<PathBuf>,
+}
+
+/// One of the root directories provided by the user, with all CLAUDE.md files found within it.
+#[derive(Debug, Clone)]
+struct SourceRoot {
+    /// The root directory path (as provided by the user)
+    path: PathBuf,
+    /// Full paths to all discovered CLAUDE.md files within this root
+    files: Vec<PathBuf>,
+}
+
+impl SourceRoot {
+    fn file_count(&self) -> usize {
+        self.files.len()
+    }
+}
+
+impl fmt::Display for SourceRoot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.file_count();
+        let label = if count == 1 { "file" } else { "files" };
+        writeln!(f, "{} ({} {})", self.path.display(), count, label)?;
+        for file in &self.files {
+            let relative = file.strip_prefix(&self.path).unwrap_or(file);
+            writeln!(f, "  {}", relative.display())?;
+        }
+        Ok(())
+    }
+}
+
+/// Return value from run() — keeps all process::exit() calls in main().
+enum ExitOutcome {
+    Success,
+    AllPathsFailed,
 }
 
 /// Directories that will never contain CLAUDE.md files.
@@ -70,26 +104,74 @@ fn find_claude_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn run() -> Result<()> {
+fn run() -> ExitOutcome {
     let cli = Cli::parse();
-    for path in &cli.paths {
-        let files = find_claude_files(path);
-        if files.is_empty() {
-            println!("No CLAUDE.md files found in {}", path.display());
+
+    let mut roots: Vec<SourceRoot> = Vec::new();
+    let mut failed_count: usize = 0;
+
+    eprintln!(
+        "Scanning {} {}...",
+        cli.paths.len(),
+        if cli.paths.len() == 1 {
+            "directory"
         } else {
-            println!("{} ({} files):", path.display(), files.len());
-            for file in &files {
-                println!("  {}", file.display());
-            }
+            "directories"
         }
+    );
+
+    for path in &cli.paths {
+        if !path.exists() {
+            eprintln!("Warning: path does not exist: {}", path.display());
+            failed_count += 1;
+            continue;
+        }
+        if !path.is_dir() {
+            eprintln!("Warning: not a directory: {}", path.display());
+            failed_count += 1;
+            continue;
+        }
+
+        let files = find_claude_files(path);
+        roots.push(SourceRoot {
+            path: path.clone(),
+            files,
+        });
     }
-    Ok(())
+
+    if roots.is_empty() && failed_count > 0 {
+        return ExitOutcome::AllPathsFailed;
+    }
+
+    let total: usize = roots.iter().map(|r| r.file_count()).sum();
+
+    if total == 0 {
+        println!("No CLAUDE.md files found.");
+    } else {
+        for root in &roots {
+            println!();
+            print!("{root}");
+        }
+        println!(
+            "Found {} CLAUDE.md {} in {} {}.",
+            total,
+            if total == 1 { "file" } else { "files" },
+            roots.len(),
+            if roots.len() == 1 {
+                "directory"
+            } else {
+                "directories"
+            }
+        );
+    }
+
+    ExitOutcome::Success
 }
 
 fn main() {
-    if let Err(err) = run() {
-        eprintln!("Error: {:#}", err);
-        process::exit(1);
+    match run() {
+        ExitOutcome::Success => {}
+        ExitOutcome::AllPathsFailed => process::exit(1),
     }
 }
 
@@ -163,5 +245,30 @@ mod tests {
             files[0] < files[1],
             "Results should be sorted alphabetically"
         );
+    }
+
+    #[test]
+    fn source_root_display_shows_count_and_relative_paths() {
+        let root = SourceRoot {
+            path: PathBuf::from("/tmp/test"),
+            files: vec![
+                PathBuf::from("/tmp/test/CLAUDE.md"),
+                PathBuf::from("/tmp/test/sub/CLAUDE.md"),
+            ],
+        };
+        let output = format!("{root}");
+        assert!(output.contains("2 files"));
+        assert!(output.contains("CLAUDE.md"));
+        assert!(output.contains("sub/CLAUDE.md"));
+    }
+
+    #[test]
+    fn source_root_display_singular_file() {
+        let root = SourceRoot {
+            path: PathBuf::from("/tmp/test"),
+            files: vec![PathBuf::from("/tmp/test/CLAUDE.md")],
+        };
+        let output = format!("{root}");
+        assert!(output.contains("1 file)"));
     }
 }

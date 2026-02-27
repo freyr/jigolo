@@ -735,44 +735,44 @@ fn help_flag_succeeds() {
 
 ### Functional Requirements
 
-- [ ] `cargo run` with no args searches current directory for CLAUDE.md files
-- [ ] `cargo run -- /path1 /path2` searches both paths
-- [ ] `cargo run -- --help` prints usage information (exit code 0)
-- [ ] `cargo run -- --version` prints version from Cargo.toml (exit code 0)
-- [ ] Non-existent paths produce a warning on stderr but don't abort
-- [ ] Permission-denied directories produce a warning on stderr and are skipped
-- [ ] Symlink cycles produce a warning on stderr and are skipped
-- [ ] Symlinks are followed (`follow_links(true)`)
-- [ ] Results are sorted alphabetically within each root
-- [ ] Roots are printed in argument order
-- [ ] Output shows grouped results with file counts per root (singular/plural)
-- [ ] "No CLAUDE.md files found." message when no files discovered
-- [ ] Exit code 0 on success (even if no files found)
-- [ ] Exit code 1 if all paths fail (non-existent or not a directory)
-- [ ] Exit code 2 on bad arguments (handled automatically by clap)
-- [ ] Directories `.git`, `node_modules`, `target` are pruned via `filter_entry()`
-- [ ] File path arguments (not directories) produce a warning and are skipped
+- [x] `cargo run` with no args searches current directory for CLAUDE.md files
+- [x] `cargo run -- /path1 /path2` searches both paths
+- [x] `cargo run -- --help` prints usage information (exit code 0)
+- [x] `cargo run -- --version` prints version from Cargo.toml (exit code 0)
+- [x] Non-existent paths produce a warning on stderr but don't abort
+- [x] Permission-denied directories produce a warning on stderr and are skipped
+- [x] Symlink cycles produce a warning on stderr and are skipped
+- [x] Symlinks are followed (`follow_links(true)`)
+- [x] Results are sorted alphabetically within each root
+- [x] Roots are printed in argument order
+- [x] Output shows grouped results with file counts per root (singular/plural)
+- [x] "No CLAUDE.md files found." message when no files discovered
+- [x] Exit code 0 on success (even if no files found)
+- [x] Exit code 1 if all paths fail (non-existent or not a directory)
+- [x] Exit code 2 on bad arguments (handled automatically by clap)
+- [x] Directories `.git`, `node_modules`, `target` are pruned via `filter_entry()`
+- [x] File path arguments (not directories) produce a warning and are skipped
 
 ### Testing Requirements
 
-- [ ] `cargo test` passes
-- [ ] Unit tests for `find_claude_files()` (happy path, empty result, filtered directories)
-- [ ] Integration tests with `assert_cmd` (no args, non-existent path, help flag)
+- [x] `cargo test` passes
+- [x] Unit tests for `find_claude_files()` (happy path, empty result, filtered directories)
+- [x] Integration tests with `assert_cmd` (no args, non-existent path, help flag)
 
 ### Learning Requirements
 
-- [ ] Each step has a learning journal entry in `docs/journal/`
-- [ ] Each journal entry documents at least 2 alternatives with trade-offs
-- [ ] Code compiles without warnings after each step (`cargo clippy` clean)
-- [ ] Code is formatted (`cargo fmt`)
+- [x] Each step has a learning journal entry in `docs/journal/`
+- [x] Each journal entry documents at least 2 alternatives with trade-offs
+- [x] Code compiles without warnings after each step (`cargo clippy` clean)
+- [x] Code is formatted (`cargo fmt`)
 
 ### Quality Gates
 
-- [ ] `cargo clippy -- -D warnings` passes (all warnings treated as errors)
-- [ ] `cargo fmt --check` passes
-- [ ] `cargo test` passes
-- [ ] No `unwrap()` or `expect()` in application code (only in tests)
-- [ ] All structs derive `Debug` at minimum
+- [x] `cargo clippy -- -D warnings` passes (all warnings treated as errors)
+- [x] `cargo fmt --check` passes
+- [x] `cargo test` passes
+- [x] No `unwrap()` or `expect()` in application code (only in tests)
+- [x] All structs derive `Debug` at minimum
 
 ---
 
