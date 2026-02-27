@@ -1,0 +1,17 @@
+- CLI app with the UI similar to eg Taproom app
+- Purpose: manage the context within all Claude.md / Memory / configuration
+- First approc. feature:
+	- Ability to give an path (one or more) 
+	- Within this path recursive search finds all CLAUDE.md files
+	- In UI narrow left panel shows a tree of CLAUDE.md path 
+		- UI is navigable by arrow keys
+	- in the broad right panel content of selected CLAUDE.md file is visible
+	- Inplace edit in any file is possible
+		- quick navigate through rows
+		- jumping words
+		- edit
+	- files is autosaved
+- App should be easily recompile for linux
+- Native for mac os
+- Win11 not necessary
+- More "visual" UI should be possible in the future
