@@ -17,7 +17,7 @@ The project manifest. Key fields:
 
 - `cargo build` — compiles to `target/debug/context-manager` but does not execute
 - `cargo run` — compiles and runs in one step. Most common during development.
-- `target/` contains build artefacts, debug symbols, and dependency caches. It can be safely deleted (`cargo clean`) but rebuilds take time.
+- `target/` contains build artefacts, debug symbols, and dependency caches. It can be safely deleted (`cargo clean`), but rebuilds take time.
 
 ## Alternatives Considered
 

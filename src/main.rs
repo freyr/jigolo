@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(files.len(), 2);
         assert!(
             files[0] < files[1],
-            "Results should be sorted alphabetically"
+            "Results should be sorted alphabetically."
         );
     }
 
