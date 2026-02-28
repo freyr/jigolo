@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0
+
+### Features
+
+- **Settings viewer** — new screen (`2` key) discovers and displays Claude Code settings files (`~/.claude/settings.json`, project settings, project local settings) in a structured, scrollable format showing model, permissions, MCP servers, hooks, plugins, and environment variables
+- **Screen switching** — tab bar with `1` / `2` keys to switch between Files and Settings screens
+
+### Improvements
+
+- **Help bar readability** — key labels now use cyan and descriptions use gray for better visibility on dark terminals
+- **Text input cursor** — arrow keys move the cursor in title and rename inputs; backspace deletes at cursor position
+- **Rename pre-fill** — renaming a snippet now places the cursor at the end of the existing title
+
+### Internal
+
+- **Project renamed** from context-manager to jigolo — updated package name, binary, repo URLs, homebrew tap, config directory, and all references
+
 ## 0.1.0
 
 Initial release.
