@@ -1,3 +1,4 @@
+use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -28,6 +29,12 @@ pub fn should_descend(entry: &DirEntry) -> bool {
         return !SKIP_DIRS.iter().any(|d| *d == name.as_ref());
     }
     true
+}
+
+pub fn find_global_claude_file() -> Option<PathBuf> {
+    let home = env::var("HOME").ok()?;
+    let path = PathBuf::from(home).join(".claude").join("CLAUDE.md");
+    path.exists().then_some(path)
 }
 
 pub fn find_claude_files(root: &Path) -> Vec<PathBuf> {
@@ -103,6 +110,34 @@ mod tests {
         let files = find_claude_files(root);
 
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn find_global_claude_file_returns_path_when_exists() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+        fs::write(tmp.path().join(".claude/CLAUDE.md"), "global").unwrap();
+
+        unsafe { env::set_var("HOME", tmp.path()) };
+        let result = find_global_claude_file();
+        unsafe { env::remove_var("HOME") };
+
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            tmp.path().join(".claude").join("CLAUDE.md")
+        );
+    }
+
+    #[test]
+    fn find_global_claude_file_returns_none_when_missing() {
+        let tmp = TempDir::new().unwrap();
+
+        unsafe { env::set_var("HOME", tmp.path()) };
+        let result = find_global_claude_file();
+        unsafe { env::remove_var("HOME") };
+
+        assert!(result.is_none());
     }
 
     #[test]

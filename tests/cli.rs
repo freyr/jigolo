@@ -59,6 +59,7 @@ fn no_claude_files_prints_friendly_message() {
     std::fs::write(tmp.path().join("README.md"), "not claude").unwrap();
 
     cmd()
+        .env("HOME", tmp.path())
         .arg(tmp.path())
         .assert()
         .success()

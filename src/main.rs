@@ -7,6 +7,7 @@ use std::process;
 use clap::Parser;
 
 use crate::discovery::find_claude_files;
+use crate::discovery::find_global_claude_file;
 use crate::model::Cli;
 use crate::model::ExitOutcome;
 use crate::model::SourceRoot;
@@ -40,15 +41,30 @@ fn run() -> ExitOutcome {
             continue;
         }
 
-        let files = find_claude_files(path);
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let files = find_claude_files(&canonical);
         roots.push(SourceRoot {
-            path: path.clone(),
+            path: canonical,
             files,
         });
     }
 
     if roots.is_empty() && failed_count > 0 {
         return ExitOutcome::AllPathsFailed;
+    }
+
+    if let Some(global_path) = find_global_claude_file() {
+        let already_found = roots.iter().any(|root| root.files.contains(&global_path));
+        if !already_found {
+            let claude_dir = global_path.parent().unwrap().to_path_buf();
+            roots.insert(
+                0,
+                SourceRoot {
+                    path: claude_dir,
+                    files: vec![global_path],
+                },
+            );
+        }
     }
 
     if cli.list {

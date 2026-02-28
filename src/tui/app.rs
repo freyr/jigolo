@@ -136,11 +136,20 @@ impl App {
         // A root node has exactly one identifier segment; a file has two.
         if selected.len() == 1 {
             self.tree_state.toggle_selected();
-        } else {
-            let file_path = selected.last().cloned();
-            if let Some(path_str) = file_path {
-                self.load_file_content(&PathBuf::from(path_str));
-            }
+        }
+
+        self.load_selected_content();
+    }
+
+    fn load_selected_content(&mut self) {
+        let selected = self.tree_state.selected();
+        if selected.len() < 2 {
+            return;
+        }
+
+        let file_path = selected.last().cloned();
+        if let Some(path_str) = file_path {
+            self.load_file_content(&PathBuf::from(path_str));
         }
     }
 
@@ -149,6 +158,10 @@ impl App {
             Ok(text) => text,
             Err(err) => format!("Error reading {}: {err}", path.display()),
         };
+        // Ratatui does not expand tab characters — it treats '\t' as a single-width
+        // glyph while the terminal may jump to the next tab stop, causing width
+        // mismatches and leftover characters when redrawing. Replace with spaces.
+        let text = text.replace('\t', "    ");
         self.content_line_count = text.lines().count();
         self.content = Some(text);
         self.content_scroll = 0;
@@ -193,15 +206,19 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_down();
+                self.load_selected_content();
             }
             KeyCode::Up | KeyCode::Char('k') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_up();
+                self.load_selected_content();
             }
             KeyCode::Left | KeyCode::Char('h') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_left();
+                self.load_selected_content();
             }
             KeyCode::Right | KeyCode::Char('l') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_right();
+                self.load_selected_content();
             }
             KeyCode::Down | KeyCode::Char('j') if self.active_pane == Pane::Content => {
                 self.scroll_down(1);
@@ -247,8 +264,10 @@ pub fn build_tree_items(roots: &[SourceRoot]) -> Vec<TreeItem<'static, TreeId>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyEventKind;
     use ratatui::crossterm::event::KeyEventState;
+    use ratatui::Terminal;
     use tempfile::TempDir;
 
     fn key_event(code: KeyCode) -> KeyEvent {
@@ -451,5 +470,121 @@ mod tests {
             .select(vec![root_id.clone(), file_id.clone()]);
         app.handle_key_event(key_event(KeyCode::Enter));
         assert_eq!(app.content_scroll, 0, "Loading new content resets scroll");
+    }
+
+    /// Extract the first content row text from the content pane in the rendered buffer.
+    fn extract_content_first_line(buf: &ratatui::buffer::Buffer, width: u16) -> String {
+        // Content pane starts at 30% of width; +1 for left border, row 1 is inside top border.
+        let content_x_start = (width * 30 / 100) + 1;
+        let content_x_end = width - 1; // exclude right border
+        (content_x_start..content_x_end)
+            .map(|x| buf[(x, 1)].symbol().to_string())
+            .collect::<String>()
+    }
+
+    #[test]
+    fn switching_files_does_not_leave_leftover_characters() {
+        let tmp = TempDir::new().unwrap();
+
+        // First file has a long first line
+        let dir_a = tmp.path().join("a");
+        fs::create_dir_all(&dir_a).unwrap();
+        let file_a = dir_a.join("CLAUDE.md");
+        fs::write(&file_a, "# CLAUDE.md\nSecond line").unwrap();
+
+        // Second file has a shorter first line
+        let dir_b = tmp.path().join("b");
+        fs::create_dir_all(&dir_b).unwrap();
+        let file_b = dir_b.join("CLAUDE.md");
+        fs::write(&file_b, "# Short\nOther").unwrap();
+
+        let roots = vec![
+            SourceRoot {
+                path: dir_a.clone(),
+                files: vec![file_a.clone()],
+            },
+            SourceRoot {
+                path: dir_b.clone(),
+                files: vec![file_b.clone()],
+            },
+        ];
+        let mut app = App::new(roots);
+        let width: u16 = 80;
+        let height: u16 = 10;
+
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // Draw 1: placeholder
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+
+        // Load the long file and draw
+        app.tree_state.select(vec![
+            dir_a.display().to_string(),
+            file_a.display().to_string(),
+        ]);
+        app.load_selected_content();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let line = extract_content_first_line(&buf, width);
+        assert_eq!(
+            line.trim_end(),
+            "# CLAUDE.md",
+            "Long file should render correctly"
+        );
+
+        // Now switch to the shorter file and draw
+        app.tree_state.select(vec![
+            dir_b.display().to_string(),
+            file_b.display().to_string(),
+        ]);
+        app.load_selected_content();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let line = extract_content_first_line(&buf, width);
+        eprintln!("RAW content row after Draw 3 (# Short): '{line}'");
+
+        // Also check the Terminal's internal buffer directly for comparison
+        // The TestBackend buffer should match the screen output
+        eprintln!("TestBackend buf cell symbols at row 1, x=25..40:");
+        for x in 25u16..40 {
+            let sym = buf[(x, 1)].symbol();
+            eprint!("[{x}:{}]", sym.escape_debug());
+        }
+        eprintln!();
+
+        let trimmed = line.trim_end();
+
+        assert_eq!(
+            trimmed, "# Short",
+            "After switching to shorter file, first line must not have leftover chars. Got: '{trimmed}'"
+        );
+    }
+
+    #[test]
+    fn tabs_are_expanded_to_spaces() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("CLAUDE.md");
+        fs::write(&file, "\tindented\n\t\tdouble").unwrap();
+
+        let roots = vec![SourceRoot {
+            path: tmp.path().to_path_buf(),
+            files: vec![file.clone()],
+        }];
+        let mut app = App::new(roots);
+
+        let root_id = tmp.path().display().to_string();
+        let file_id = file.display().to_string();
+        app.tree_state.select(vec![root_id, file_id]);
+        app.handle_key_event(key_event(KeyCode::Enter));
+
+        let content = app.content.as_deref().unwrap();
+        assert!(
+            !content.contains('\t'),
+            "Tabs should be replaced with spaces, got: {content:?}"
+        );
+        assert!(content.starts_with("    indented"));
     }
 }
