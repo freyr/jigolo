@@ -2,11 +2,17 @@
 name = "context-manager"
 version = "0.1.0"
 edition = "2024"
+description = "A TUI tool for managing CLAUDE.md context files"
+license = "MIT"
+repository = "https://github.com/freyr/claude-manager"
+homepage = "https://github.com/freyr/claude-manager"
 
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 ratatui = { version = "0.29", features = ["crossterm"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
 tui-tree-widget = "0.23"
 walkdir = "2.5.0"
 
@@ -14,3 +20,8 @@ walkdir = "2.5.0"
 assert_cmd = "2.1.2"
 predicates = "3.1.4"
 tempfile = "3.26.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

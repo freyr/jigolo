@@ -1,4 +1,5 @@
 mod discovery;
+mod library;
 mod model;
 mod tui;
 
