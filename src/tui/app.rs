@@ -56,10 +56,22 @@ impl App {
             tree_state.open(vec![root.path.display().to_string()]);
         }
 
-        // Select first item
-        tree_state.select_first();
+        // Select the first file under the first root so the app opens with
+        // content visible (typically the global CLAUDE.md).
+        if let Some(first_root) = roots.first() {
+            if let Some(first_file) = first_root.files.first() {
+                tree_state.select(vec![
+                    first_root.path.display().to_string(),
+                    first_file.display().to_string(),
+                ]);
+            } else {
+                tree_state.select_first();
+            }
+        } else {
+            tree_state.select_first();
+        }
 
-        Self {
+        let mut app = Self {
             exit: false,
             tree_state,
             tree_items,
@@ -67,7 +79,10 @@ impl App {
             content: None,
             content_scroll: 0,
             content_line_count: 0,
-        }
+        };
+
+        app.load_selected_content();
+        app
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -372,25 +387,53 @@ mod tests {
     }
 
     #[test]
-    fn select_tree_item_loads_file_content() {
+    fn first_file_is_selected_and_loaded_on_startup() {
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("CLAUDE.md");
         fs::write(&file, "Test content").unwrap();
 
-        let root_id = tmp.path().display().to_string();
-        let file_id = file.display().to_string();
+        let roots = vec![SourceRoot {
+            path: tmp.path().to_path_buf(),
+            files: vec![file.clone()],
+        }];
+        let app = App::new(roots);
+
+        // The first file should be auto-selected and its content loaded
+        assert_eq!(app.content.as_deref(), Some("Test content"));
+        assert_eq!(
+            app.tree_state.selected(),
+            vec![tmp.path().display().to_string(), file.display().to_string()]
+        );
+    }
+
+    #[test]
+    fn select_tree_item_loads_file_content() {
+        let tmp = TempDir::new().unwrap();
+
+        let file_a = tmp.path().join("CLAUDE.md");
+        fs::write(&file_a, "First content").unwrap();
+
+        let sub = tmp.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let file_b = sub.join("CLAUDE.md");
+        fs::write(&file_b, "Second content").unwrap();
 
         let roots = vec![SourceRoot {
             path: tmp.path().to_path_buf(),
-            files: vec![file],
+            files: vec![file_a, file_b.clone()],
         }];
         let mut app = App::new(roots);
-        assert!(app.content.is_none());
 
-        // Directly select the file node (two-segment identifier: root + file)
-        app.tree_state.select(vec![root_id, file_id]);
+        // First file is loaded on startup
+        assert_eq!(app.content.as_deref(), Some("First content"));
+
+        // Select a different file via tree navigation
+        app.tree_state.select(vec![
+            tmp.path().display().to_string(),
+            file_b.display().to_string(),
+        ]);
         app.handle_key_event(key_event(KeyCode::Enter));
-        assert_eq!(app.content.as_deref(), Some("Test content"));
+        assert_eq!(app.content.as_deref(), Some("Second content"));
     }
 
     #[test]
