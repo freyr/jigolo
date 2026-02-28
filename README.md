@@ -34,14 +34,18 @@ jigolo /path1 /path2     # Browse specific directories
 jigolo --list /path      # List files and exit (no TUI)
 ```
 
-The TUI opens with a dual-pane layout: file tree on the left, content on the right.
+The TUI has two screens, switched with `1` and `2`:
+
+- **Files** — dual-pane browser with file tree (left) and content (right)
+- **Settings** — read-only viewer for Claude Code settings files
 
 ### Keybindings
 
 | Key | Action |
 |-----|--------|
+| `1` / `2` | Switch screen (Files / Settings) |
 | `j/k` | Navigate / scroll |
-| `Tab` | Switch pane |
+| `Tab` | Switch pane (Files screen) |
 | `Enter` | Open/select |
 | `v` | Start visual line selection |
 | `s` | Save selection as snippet |
@@ -50,6 +54,16 @@ The TUI opens with a dual-pane layout: file tree on the left, content on the rig
 | `d` | Delete snippet (in library) |
 | `Esc` | Cancel / go back |
 | `q` | Quit |
+
+### Settings Viewer
+
+Press `2` to view Claude Code settings from all discovered files:
+
+- `~/.claude/settings.json` (Global)
+- `.claude/settings.json` (Project)
+- `.claude/settings.local.json` (Project Local)
+
+Displays model, permissions, MCP servers, hooks, plugins, and environment variables in a structured format. Scroll with `j/k`.
 
 ### Snippet Library
 
