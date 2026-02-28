@@ -50,7 +50,6 @@ pub struct ContentState {
     pub text: Option<String>,
     pub scroll: u16,
     pub cursor: usize,
-    pub line_count: usize,
     pub visual_anchor: Option<usize>,
     /// Captured during draw() — number of visible content lines inside the
     /// border. The event loop always draws before handling input, so this is
@@ -64,14 +63,17 @@ impl ContentState {
             text: None,
             scroll: 0,
             cursor: 0,
-            line_count: 0,
             visual_anchor: None,
             viewport_height: 0,
         }
     }
 
+    pub fn line_count(&self) -> usize {
+        self.text.as_ref().map_or(0, |t| t.lines().count())
+    }
+
     fn max_cursor(&self) -> usize {
-        self.line_count.saturating_sub(1)
+        self.line_count().saturating_sub(1)
     }
 
     pub fn cursor_down(&mut self) {
@@ -113,7 +115,6 @@ impl ContentState {
         // glyph while the terminal may jump to the next tab stop, causing width
         // mismatches and leftover characters when redrawing. Replace with spaces.
         let text = raw.replace('\t', "    ");
-        self.line_count = text.lines().count();
         self.text = Some(text);
         self.scroll = 0;
         self.cursor = 0;
@@ -295,16 +296,17 @@ impl App {
             Style::default()
         };
 
-        let tree = Tree::new(&self.tree_items)
-            .expect("tree items have unique identifiers")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(file_border_style)
-                    .title("CLAUDE.md files"),
-            )
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-        frame.render_stateful_widget(tree, chunks[0], &mut self.tree_state);
+        if let Ok(tree) = Tree::new(&self.tree_items) {
+            let tree = tree
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(file_border_style)
+                        .title("CLAUDE.md files"),
+                )
+                .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+            frame.render_stateful_widget(tree, chunks[0], &mut self.tree_state);
+        }
 
         let content_title = match self.mode {
             Mode::VisualSelect | Mode::TitleInput => {
@@ -365,7 +367,7 @@ impl App {
         frame.render_widget(content_widget, chunks[1]);
 
         let mut scrollbar_state =
-            ScrollbarState::new(self.content.line_count).position(self.content.scroll as usize);
+            ScrollbarState::new(self.content.line_count()).position(self.content.scroll as usize);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
         frame.render_stateful_widget(scrollbar, chunks[1], &mut scrollbar_state);
 
@@ -611,7 +613,7 @@ impl App {
 pub fn build_tree_items(roots: &[SourceRoot]) -> Vec<TreeItem<'static, TreeId>> {
     roots
         .iter()
-        .map(|root| {
+        .filter_map(|root| {
             let root_id = root.path.display().to_string();
             let children: Vec<TreeItem<'static, TreeId>> = root
                 .files
@@ -626,8 +628,7 @@ pub fn build_tree_items(roots: &[SourceRoot]) -> Vec<TreeItem<'static, TreeId>> 
                     TreeItem::new_leaf(file_id, label)
                 })
                 .collect();
-            TreeItem::new(root_id, root.path.display().to_string(), children)
-                .expect("file paths are unique within a root")
+            TreeItem::new(root_id, root.path.display().to_string(), children).ok()
         })
         .collect()
 }
@@ -820,7 +821,6 @@ mod tests {
     fn cursor_moves_down_and_scrolls_when_past_viewport() {
         let mut app = App::new(vec![]);
         app.content.text = Some("Line 0\nLine 1\nLine 2\nLine 3\nLine 4".to_string());
-        app.content.line_count = 5;
         app.content.viewport_height = 3; // can see 3 lines
         app.active_pane = Pane::Content;
 
@@ -841,7 +841,6 @@ mod tests {
     fn cursor_does_not_go_below_zero() {
         let mut app = App::new(vec![]);
         app.content.text = Some("Line 0\nLine 1".to_string());
-        app.content.line_count = 2;
         app.active_pane = Pane::Content;
 
         app.handle_key_event(key_event(KeyCode::Up));
@@ -852,7 +851,6 @@ mod tests {
     fn cursor_clamps_at_last_line() {
         let mut app = App::new(vec![]);
         app.content.text = Some("Line 0\nLine 1\nLine 2\nLine 3\nLine 4".to_string());
-        app.content.line_count = 5;
         app.content.viewport_height = 3;
         app.active_pane = Pane::Content;
 
@@ -1029,7 +1027,6 @@ mod tests {
     fn content_state_selected_text_extracts_lines() {
         let mut state = ContentState::new();
         state.text = Some("line 0\nline 1\nline 2\nline 3\nline 4".to_string());
-        state.line_count = 5;
         state.visual_anchor = Some(1);
         state.cursor = 3;
 
@@ -1122,7 +1119,6 @@ mod tests {
     fn v_in_content_pane_enters_visual_select() {
         let mut app = App::new(vec![]);
         app.content.text = Some("line 0\nline 1\nline 2".to_string());
-        app.content.line_count = 3;
         app.active_pane = Pane::Content;
         app.content.cursor = 1;
 
@@ -1158,7 +1154,6 @@ mod tests {
     fn jk_in_visual_select_moves_cursor() {
         let mut app = App::new(vec![]);
         app.content.text = Some("line 0\nline 1\nline 2\nline 3\nline 4".to_string());
-        app.content.line_count = 5;
         app.content.viewport_height = 10;
         app.mode = Mode::VisualSelect;
         app.content.visual_anchor = Some(1);
@@ -1265,7 +1260,6 @@ mod tests {
 
         let mut app = App::new(vec![]);
         app.content.text = Some("line 0\nline 1\nline 2\nline 3".to_string());
-        app.content.line_count = 4;
         app.content.visual_anchor = Some(1);
         app.content.cursor = 2;
         app.mode = Mode::TitleInput;

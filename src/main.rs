@@ -56,12 +56,11 @@ fn run() -> ExitOutcome {
 
     if let Some(global_path) = find_global_claude_file() {
         let already_found = roots.iter().any(|root| root.files.contains(&global_path));
-        if !already_found {
-            let claude_dir = global_path.parent().unwrap().to_path_buf();
+        if !already_found && let Some(claude_dir) = global_path.parent() {
             roots.insert(
                 0,
                 SourceRoot {
-                    path: claude_dir,
+                    path: claude_dir.to_path_buf(),
                     files: vec![global_path],
                 },
             );

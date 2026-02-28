@@ -33,7 +33,11 @@ pub fn should_descend(entry: &DirEntry) -> bool {
 
 pub fn find_global_claude_file() -> Option<PathBuf> {
     let home = env::var("HOME").ok()?;
-    let path = PathBuf::from(home).join(".claude").join("CLAUDE.md");
+    find_global_claude_file_in(&PathBuf::from(home))
+}
+
+pub fn find_global_claude_file_in(home: &Path) -> Option<PathBuf> {
+    let path = home.join(".claude").join("CLAUDE.md");
     path.exists().then_some(path)
 }
 
@@ -118,9 +122,7 @@ mod tests {
         fs::create_dir_all(tmp.path().join(".claude")).unwrap();
         fs::write(tmp.path().join(".claude/CLAUDE.md"), "global").unwrap();
 
-        unsafe { env::set_var("HOME", tmp.path()) };
-        let result = find_global_claude_file();
-        unsafe { env::remove_var("HOME") };
+        let result = find_global_claude_file_in(tmp.path());
 
         assert!(result.is_some());
         assert_eq!(
@@ -133,9 +135,7 @@ mod tests {
     fn find_global_claude_file_returns_none_when_missing() {
         let tmp = TempDir::new().unwrap();
 
-        unsafe { env::set_var("HOME", tmp.path()) };
-        let result = find_global_claude_file();
-        unsafe { env::remove_var("HOME") };
+        let result = find_global_claude_file_in(tmp.path());
 
         assert!(result.is_none());
     }

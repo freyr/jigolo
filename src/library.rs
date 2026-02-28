@@ -24,12 +24,13 @@ pub struct SnippetLibrary {
 
 pub fn library_path() -> Option<PathBuf> {
     let home = env::var("HOME").ok()?;
-    Some(
-        PathBuf::from(home)
-            .join(".config")
-            .join("context-manager")
-            .join("library.toml"),
-    )
+    Some(library_path_in(&PathBuf::from(home)))
+}
+
+pub fn library_path_in(home: &Path) -> PathBuf {
+    home.join(".config")
+        .join("context-manager")
+        .join("library.toml")
 }
 
 pub fn load_library(path: &Path) -> Result<SnippetLibrary> {
@@ -171,18 +172,16 @@ content = "body"
     }
 
     #[test]
-    fn library_path_uses_home_env() {
+    fn library_path_resolves_from_home() {
         let tmp = TempDir::new().unwrap();
 
-        unsafe { env::set_var("HOME", tmp.path()) };
-        let path = library_path();
-        unsafe { env::remove_var("HOME") };
+        let path = library_path_in(tmp.path());
 
         let expected = tmp
             .path()
             .join(".config")
             .join("context-manager")
             .join("library.toml");
-        assert_eq!(path, Some(expected));
+        assert_eq!(path, expected);
     }
 }
