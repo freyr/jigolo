@@ -1,6 +1,7 @@
 mod discovery;
 mod library;
 mod model;
+mod settings;
 mod tui;
 
 use std::process;

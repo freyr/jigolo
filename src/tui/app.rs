@@ -31,8 +31,15 @@ use tui_tree_widget::TreeState;
 
 use crate::library::SnippetLibrary;
 use crate::model::SourceRoot;
+use crate::settings::format_settings;
 
 pub type TreeId = String;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Files,
+    Settings,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
@@ -142,9 +149,62 @@ impl ContentState {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct SettingsState {
+    pub lines: Vec<String>,
+    pub scroll: u16,
+    pub cursor: usize,
+    pub viewport_height: u16,
+}
+
+impl SettingsState {
+    fn line_count(&self) -> usize {
+        self.lines.len()
+    }
+
+    fn max_cursor(&self) -> usize {
+        self.line_count().saturating_sub(1)
+    }
+
+    pub fn cursor_down(&mut self) {
+        if self.cursor < self.max_cursor() {
+            self.cursor += 1;
+            self.ensure_cursor_visible();
+        }
+    }
+
+    pub fn cursor_up(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+        self.ensure_cursor_visible();
+    }
+
+    pub fn cursor_page_down(&mut self) {
+        let page = (self.viewport_height as usize).max(1);
+        self.cursor = (self.cursor + page).min(self.max_cursor());
+        self.ensure_cursor_visible();
+    }
+
+    pub fn cursor_page_up(&mut self) {
+        let page = (self.viewport_height as usize).max(1);
+        self.cursor = self.cursor.saturating_sub(page);
+        self.ensure_cursor_visible();
+    }
+
+    fn ensure_cursor_visible(&mut self) {
+        let scroll = self.scroll as usize;
+        let vh = self.viewport_height as usize;
+        if self.cursor < scroll {
+            self.scroll = self.cursor as u16;
+        } else if vh > 0 && self.cursor >= scroll + vh {
+            self.scroll = (self.cursor - vh + 1) as u16;
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     pub exit: bool,
+    pub screen: Screen,
     pub mode: Mode,
     tree_state: TreeState<TreeId>,
     tree_items: Vec<TreeItem<'static, TreeId>>,
@@ -155,6 +215,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub library: Option<SnippetLibrary>,
     pub library_selected: usize,
+    pub settings_state: SettingsState,
 }
 
 impl App {
@@ -184,6 +245,7 @@ impl App {
 
         let mut app = Self {
             exit: false,
+            screen: Screen::Files,
             mode: Mode::Normal,
             tree_state,
             tree_items,
@@ -194,6 +256,7 @@ impl App {
             status_message: None,
             library: None,
             library_selected: 0,
+            settings_state: SettingsState::default(),
         };
 
         app.load_selected_content();
@@ -216,41 +279,55 @@ impl App {
         let desc_style = Style::default().fg(Color::Gray);
         let sep = Span::styled("  ", desc_style);
 
-        let pairs: Vec<(&str, &str)> = match self.mode {
-            Mode::Normal if self.active_pane == Pane::Content => {
+        let pairs: Vec<(&str, &str)> = match self.screen {
+            Screen::Settings => {
                 vec![
-                    ("q", "Quit"),
-                    ("Tab", "Files"),
+                    ("1", "Files"),
+                    ("2", "Settings"),
                     ("j/k", "Scroll"),
-                    ("v", "Select"),
-                    ("L", "Library"),
-                ]
-            }
-            Mode::Normal => {
-                vec![
                     ("q", "Quit"),
-                    ("Tab", "Content"),
-                    ("j/k", "Navigate"),
-                    ("Enter", "Open"),
                 ]
             }
-            Mode::VisualSelect => {
-                vec![("j/k", "Extend"), ("s", "Save"), ("Esc", "Cancel")]
-            }
-            Mode::TitleInput => {
-                vec![("Enter", "Save"), ("Esc", "Cancel")]
-            }
-            Mode::LibraryBrowse => {
-                vec![
-                    ("j/k", "Navigate"),
-                    ("r", "Rename"),
-                    ("d", "Delete"),
-                    ("Esc", "Back"),
-                ]
-            }
-            Mode::RenameInput => {
-                vec![("Enter", "Save"), ("Esc", "Cancel")]
-            }
+            Screen::Files => match self.mode {
+                Mode::Normal if self.active_pane == Pane::Content => {
+                    vec![
+                        ("1", "Files"),
+                        ("2", "Settings"),
+                        ("q", "Quit"),
+                        ("Tab", "Files"),
+                        ("j/k", "Scroll"),
+                        ("v", "Select"),
+                        ("L", "Library"),
+                    ]
+                }
+                Mode::Normal => {
+                    vec![
+                        ("1", "Files"),
+                        ("2", "Settings"),
+                        ("q", "Quit"),
+                        ("Tab", "Content"),
+                        ("j/k", "Navigate"),
+                        ("Enter", "Open"),
+                    ]
+                }
+                Mode::VisualSelect => {
+                    vec![("j/k", "Extend"), ("s", "Save"), ("Esc", "Cancel")]
+                }
+                Mode::TitleInput => {
+                    vec![("Enter", "Save"), ("Esc", "Cancel")]
+                }
+                Mode::LibraryBrowse => {
+                    vec![
+                        ("j/k", "Navigate"),
+                        ("r", "Rename"),
+                        ("d", "Delete"),
+                        ("Esc", "Back"),
+                    ]
+                }
+                Mode::RenameInput => {
+                    vec![("Enter", "Save"), ("Esc", "Cancel")]
+                }
+            },
         };
 
         let mut spans: Vec<Span> = Vec::new();
@@ -265,29 +342,96 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        // Vertical layout: main area + optional input/status bar + help bar
-        let has_input_or_status = self.mode == Mode::TitleInput
-            || self.mode == Mode::RenameInput
-            || self.status_message.is_some();
+        // Vertical layout: tab_bar + main area + optional input/status bar + help bar
+        let has_input_or_status = self.screen == Screen::Files
+            && (self.mode == Mode::TitleInput
+                || self.mode == Mode::RenameInput
+                || self.status_message.is_some());
+
+        let mut constraints = vec![Constraint::Length(1), Constraint::Min(3)];
+        if has_input_or_status {
+            constraints.push(Constraint::Length(3));
+        }
+        constraints.push(Constraint::Length(1));
+
         let vertical = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(if has_input_or_status {
-                vec![
-                    Constraint::Min(3),
-                    Constraint::Length(3),
-                    Constraint::Length(1),
-                ]
-            } else {
-                vec![Constraint::Min(3), Constraint::Length(1)]
-            })
+            .constraints(constraints)
             .split(frame.area());
 
-        let main_area = vertical[0];
+        let tab_area = vertical[0];
+        let main_area = vertical[1];
 
+        // Tab bar
+        self.draw_tab_bar(frame, tab_area);
+
+        // Main content area — route by screen
+        match self.screen {
+            Screen::Files => self.draw_files_screen(frame, main_area),
+            Screen::Settings => self.draw_settings_screen(frame, main_area),
+        }
+
+        // Input/status bar (when active, Files screen only)
+        if has_input_or_status {
+            let bar_area = vertical[2];
+            if self.mode == Mode::TitleInput || self.mode == Mode::RenameInput {
+                let bar_title = if self.mode == Mode::RenameInput {
+                    "Rename snippet"
+                } else {
+                    "Snippet title"
+                };
+                let input_widget = Paragraph::new(self.title_input.as_str()).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Yellow))
+                        .title(bar_title),
+                );
+                frame.render_widget(input_widget, bar_area);
+                let cursor_x = bar_area.x + 1 + self.title_cursor as u16;
+                let cursor_y = bar_area.y + 1;
+                frame.set_cursor_position((cursor_x, cursor_y));
+            } else if let Some(msg) = &self.status_message {
+                let status_widget = Paragraph::new(msg.as_str())
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                frame.render_widget(status_widget, bar_area);
+            }
+        }
+
+        // Help bar (always visible, last slot)
+        let help_area = vertical[vertical.len() - 1];
+        let help = Paragraph::new(self.help_line());
+        frame.render_widget(help, help_area);
+    }
+
+    fn draw_tab_bar(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        let active_style = Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let inactive_style = Style::default().fg(Color::DarkGray);
+
+        let files_style = if self.screen == Screen::Files {
+            active_style
+        } else {
+            inactive_style
+        };
+        let settings_style = if self.screen == Screen::Settings {
+            active_style
+        } else {
+            inactive_style
+        };
+
+        let tab_line = Line::from(vec![
+            Span::styled(" [1 Files] ", files_style),
+            Span::styled(" [2 Settings] ", settings_style),
+        ]);
+        frame.render_widget(Paragraph::new(tab_line), area);
+    }
+
+    fn draw_files_screen(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-            .split(main_area);
+            .split(area);
 
         let file_border_style = if self.active_pane == Pane::FileList {
             Style::default().fg(Color::Cyan)
@@ -318,41 +462,38 @@ impl App {
         } else {
             self.draw_content_pane(frame, chunks[1], content_border_style);
         }
+    }
 
-        // Input/status bar (when active)
-        if has_input_or_status {
-            let bar_area = vertical[1];
-            if self.mode == Mode::TitleInput || self.mode == Mode::RenameInput {
-                let bar_title = if self.mode == Mode::RenameInput {
-                    "Rename snippet"
+    fn draw_settings_screen(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        self.settings_state.viewport_height = area.height.saturating_sub(2);
+
+        let cursor_line = self.settings_state.cursor;
+        let cursor_style = Style::default().add_modifier(Modifier::UNDERLINED);
+
+        let lines: Vec<Line> = self
+            .settings_state
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(i, line_text)| {
+                let style = if i == cursor_line {
+                    cursor_style
                 } else {
-                    "Snippet title"
+                    Style::default()
                 };
-                let input_widget = Paragraph::new(self.title_input.as_str()).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Yellow))
-                        .title(bar_title),
-                );
-                frame.render_widget(input_widget, bar_area);
-                let cursor_x = bar_area.x + 1 + self.title_cursor as u16;
-                let cursor_y = bar_area.y + 1;
-                frame.set_cursor_position((cursor_x, cursor_y));
-            } else if let Some(msg) = &self.status_message {
-                let status_widget = Paragraph::new(msg.as_str())
-                    .block(Block::default().borders(Borders::ALL).title("Status"));
-                frame.render_widget(status_widget, bar_area);
-            }
-        }
+                Line::from(line_text.as_str().to_string()).style(style)
+            })
+            .collect();
 
-        // Help bar (always visible)
-        let help_area = if has_input_or_status {
-            vertical[2]
-        } else {
-            vertical[1]
-        };
-        let help = Paragraph::new(self.help_line());
-        frame.render_widget(help, help_area);
+        let settings_widget = Paragraph::new(Text::from(lines))
+            .block(Block::default().borders(Borders::ALL).title("Settings"))
+            .scroll((self.settings_state.scroll, 0));
+        frame.render_widget(settings_widget, area);
+
+        let mut scrollbar_state = ScrollbarState::new(self.settings_state.line_count())
+            .position(self.settings_state.scroll as usize);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+        frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
     }
 
     fn draw_content_pane(
@@ -535,6 +676,48 @@ impl App {
         self.title_cursor = 0;
     }
 
+    fn switch_to_settings(&mut self) {
+        let project = std::env::current_dir().unwrap_or_default();
+        self.switch_to_settings_from(&project);
+    }
+
+    /// Switch to settings screen using an explicit project path (for testability).
+    pub fn switch_to_settings_from(&mut self, project: &Path) {
+        let collection = crate::settings::discover_settings_files(project);
+        self.settings_state.lines = format_settings(&collection);
+        self.settings_state.scroll = 0;
+        self.settings_state.cursor = 0;
+        self.screen = Screen::Settings;
+    }
+
+    /// Switch to settings screen with a pre-built collection (for testability).
+    #[cfg(test)]
+    pub fn switch_to_settings_with(&mut self, collection: &crate::settings::SettingsCollection) {
+        self.settings_state.lines = format_settings(collection);
+        self.settings_state.scroll = 0;
+        self.settings_state.cursor = 0;
+        self.screen = Screen::Settings;
+    }
+
+    fn handle_settings_key(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit = true,
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.settings_state.cursor_down();
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.settings_state.cursor_up();
+            }
+            KeyCode::PageDown => {
+                self.settings_state.cursor_page_down();
+            }
+            KeyCode::PageUp => {
+                self.settings_state.cursor_page_up();
+            }
+            _ => {}
+        }
+    }
+
     fn current_source_path(&self) -> String {
         self.tree_state
             .selected()
@@ -562,12 +745,30 @@ impl App {
             return;
         }
 
-        match self.mode {
-            Mode::Normal => self.handle_normal_key(key_event),
-            Mode::VisualSelect => self.handle_visual_select_key(key_event),
-            Mode::TitleInput => self.handle_title_input_key(key_event),
-            Mode::LibraryBrowse => self.handle_library_browse_key(key_event),
-            Mode::RenameInput => self.handle_rename_input_key(key_event),
+        // Screen switching only in Normal mode
+        if self.mode == Mode::Normal {
+            match key_event.code {
+                KeyCode::Char('1') => {
+                    self.screen = Screen::Files;
+                    return;
+                }
+                KeyCode::Char('2') => {
+                    self.switch_to_settings();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        match self.screen {
+            Screen::Files => match self.mode {
+                Mode::Normal => self.handle_normal_key(key_event),
+                Mode::VisualSelect => self.handle_visual_select_key(key_event),
+                Mode::TitleInput => self.handle_title_input_key(key_event),
+                Mode::LibraryBrowse => self.handle_library_browse_key(key_event),
+                Mode::RenameInput => self.handle_rename_input_key(key_event),
+            },
+            Screen::Settings => self.handle_settings_key(key_event),
         }
     }
 
@@ -1165,11 +1366,12 @@ mod tests {
 
     /// Extract the first content row text from the content pane in the rendered buffer.
     fn extract_content_first_line(buf: &ratatui::buffer::Buffer, width: u16) -> String {
-        // Content pane starts at 30% of width; +1 for left border, row 1 is inside top border.
+        // Row 0 = tab bar, row 1 = border top of content pane,
+        // row 2 = first content line inside the border.
         let content_x_start = (width * 30 / 100) + 1;
         let content_x_end = width - 1; // exclude right border
         (content_x_start..content_x_end)
-            .map(|x| buf[(x, 1)].symbol().to_string())
+            .map(|x| buf[(x, 2)].symbol().to_string())
             .collect::<String>()
     }
 
@@ -1239,9 +1441,9 @@ mod tests {
 
         // Also check the Terminal's internal buffer directly for comparison
         // The TestBackend buffer should match the screen output
-        eprintln!("TestBackend buf cell symbols at row 1, x=25..40:");
+        eprintln!("TestBackend buf cell symbols at row 2, x=25..40:");
         for x in 25u16..40 {
-            let sym = buf[(x, 1)].symbol();
+            let sym = buf[(x, 2)].symbol();
             eprint!("[{x}:{}]", sym.escape_debug());
         }
         eprintln!();
@@ -1847,5 +2049,75 @@ mod tests {
             Mode::LibraryBrowse,
             "Stays in browse on empty lib"
         );
+    }
+
+    // --- Settings screen tests ---
+
+    #[test]
+    fn app_starts_on_files_screen() {
+        let app = App::new(vec![]);
+        assert_eq!(app.screen, Screen::Files);
+    }
+
+    #[test]
+    fn pressing_2_switches_to_settings() {
+        let mut app = App::new(vec![]);
+        let collection = crate::settings::SettingsCollection {
+            files: vec![crate::settings::SettingsFile {
+                label: "Test".to_string(),
+                path: PathBuf::from("/test/settings.json"),
+                value: serde_json::json!({"model": "opus"}),
+            }],
+        };
+        app.switch_to_settings_with(&collection);
+        assert_eq!(app.screen, Screen::Settings);
+        assert!(!app.settings_state.lines.is_empty());
+    }
+
+    #[test]
+    fn pressing_1_returns_to_files() {
+        let mut app = App::new(vec![]);
+        app.screen = Screen::Settings;
+        app.handle_key_event(key_event(KeyCode::Char('1')));
+        assert_eq!(app.screen, Screen::Files);
+    }
+
+    #[test]
+    fn pressing_2_in_title_input_types_char_not_switch() {
+        let mut app = App::new(vec![]);
+        app.mode = Mode::TitleInput;
+        app.handle_key_event(key_event(KeyCode::Char('2')));
+        assert_eq!(app.screen, Screen::Files, "Should NOT switch screen");
+        assert_eq!(app.title_input, "2", "Should type '2' into input");
+    }
+
+    #[test]
+    fn q_on_settings_exits() {
+        let mut app = App::new(vec![]);
+        app.screen = Screen::Settings;
+        app.handle_key_event(key_event(KeyCode::Char('q')));
+        assert!(app.exit);
+    }
+
+    #[test]
+    fn jk_on_settings_scrolls() {
+        let mut app = App::new(vec![]);
+        app.screen = Screen::Settings;
+        app.settings_state.lines = vec![
+            "Line 0".to_string(),
+            "Line 1".to_string(),
+            "Line 2".to_string(),
+            "Line 3".to_string(),
+        ];
+        app.settings_state.viewport_height = 10;
+
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.settings_state.cursor, 1);
+
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.settings_state.cursor, 2);
+
+        app.handle_key_event(key_event(KeyCode::Char('k')));
+        assert_eq!(app.settings_state.cursor, 1);
     }
 }
