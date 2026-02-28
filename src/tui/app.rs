@@ -46,6 +46,7 @@ pub enum Mode {
     VisualSelect,
     TitleInput,
     LibraryBrowse,
+    RenameInput,
 }
 
 #[derive(Debug)]
@@ -238,7 +239,15 @@ impl App {
                 vec![("Enter", "Save"), ("Esc", "Cancel")]
             }
             Mode::LibraryBrowse => {
-                vec![("j/k", "Navigate"), ("d", "Delete"), ("Esc", "Back")]
+                vec![
+                    ("j/k", "Navigate"),
+                    ("r", "Rename"),
+                    ("d", "Delete"),
+                    ("Esc", "Back"),
+                ]
+            }
+            Mode::RenameInput => {
+                vec![("Enter", "Save"), ("Esc", "Cancel")]
             }
         };
 
@@ -255,7 +264,9 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         // Vertical layout: main area + optional input/status bar + help bar
-        let has_input_or_status = self.mode == Mode::TitleInput || self.status_message.is_some();
+        let has_input_or_status = self.mode == Mode::TitleInput
+            || self.mode == Mode::RenameInput
+            || self.status_message.is_some();
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints(if has_input_or_status {
@@ -300,7 +311,7 @@ impl App {
             frame.render_stateful_widget(tree, chunks[0], &mut self.tree_state);
         }
 
-        if self.mode == Mode::LibraryBrowse {
+        if self.mode == Mode::LibraryBrowse || self.mode == Mode::RenameInput {
             self.draw_library_pane(frame, chunks[1], content_border_style);
         } else {
             self.draw_content_pane(frame, chunks[1], content_border_style);
@@ -309,12 +320,17 @@ impl App {
         // Input/status bar (when active)
         if has_input_or_status {
             let bar_area = vertical[1];
-            if self.mode == Mode::TitleInput {
+            if self.mode == Mode::TitleInput || self.mode == Mode::RenameInput {
+                let bar_title = if self.mode == Mode::RenameInput {
+                    "Rename snippet"
+                } else {
+                    "Snippet title"
+                };
                 let input_widget = Paragraph::new(self.title_input.as_str()).block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Yellow))
-                        .title("Snippet title"),
+                        .title(bar_title),
                 );
                 frame.render_widget(input_widget, bar_area);
                 let cursor_x = bar_area.x + 1 + self.title_input.len() as u16;
@@ -548,6 +564,7 @@ impl App {
             Mode::VisualSelect => self.handle_visual_select_key(key_event),
             Mode::TitleInput => self.handle_title_input_key(key_event),
             Mode::LibraryBrowse => self.handle_library_browse_key(key_event),
+            Mode::RenameInput => self.handle_rename_input_key(key_event),
         }
     }
 
@@ -732,8 +749,70 @@ impl App {
             KeyCode::Char('d') => {
                 self.delete_library_snippet();
             }
+            KeyCode::Char('r') => {
+                if let Some(lib) = &self.library
+                    && let Some(snippet) = lib.snippets.get(self.library_selected)
+                {
+                    self.title_input = snippet.title.clone();
+                    self.mode = Mode::RenameInput;
+                }
+            }
             _ => {}
         }
+    }
+
+    fn handle_rename_input_key(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Esc => {
+                self.title_input.clear();
+                self.mode = Mode::LibraryBrowse;
+            }
+            KeyCode::Enter => {
+                self.rename_library_snippet();
+            }
+            KeyCode::Backspace => {
+                self.title_input.pop();
+            }
+            KeyCode::Char(c) => {
+                self.title_input.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    fn rename_library_snippet(&mut self) {
+        match crate::library::library_path() {
+            Some(path) => self.rename_library_snippet_from(&path),
+            None => {
+                self.status_message = Some("Cannot determine library path.".to_string());
+                self.title_input.clear();
+                self.mode = Mode::LibraryBrowse;
+            }
+        }
+    }
+
+    /// Rename a library snippet. Extracted for testability.
+    pub fn rename_library_snippet_from(&mut self, path: &Path) {
+        let new_title = self.title_input.trim().to_string();
+        if new_title.is_empty() {
+            self.status_message = Some("Title cannot be empty.".to_string());
+            return;
+        }
+
+        match crate::library::rename_snippet(self.library_selected, &new_title, path) {
+            Ok(()) => {
+                if let Ok(lib) = crate::library::load_library(path) {
+                    self.library = Some(lib);
+                }
+                self.status_message = Some("Snippet renamed.".to_string());
+            }
+            Err(err) => {
+                self.status_message = Some(format!("Rename failed: {err}"));
+            }
+        }
+
+        self.title_input.clear();
+        self.mode = Mode::LibraryBrowse;
     }
 
     fn delete_library_snippet(&mut self) {
@@ -1237,6 +1316,7 @@ mod tests {
             Mode::VisualSelect,
             Mode::TitleInput,
             Mode::LibraryBrowse,
+            Mode::RenameInput,
         ] {
             let mut app = App::new(vec![]);
             app.mode = mode;
@@ -1643,5 +1723,94 @@ mod tests {
         assert_eq!(lib.snippets.len(), 2);
         assert_eq!(lib.snippets[0].title, "X");
         assert_eq!(lib.snippets[1].title, "Y");
+    }
+
+    // --- Rename tests ---
+
+    #[test]
+    fn r_in_library_browse_enters_rename_with_current_title() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["My Snippet"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+
+        app.handle_key_event(key_event(KeyCode::Char('r')));
+
+        assert_eq!(app.mode, Mode::RenameInput);
+        assert_eq!(app.title_input, "My Snippet");
+    }
+
+    #[test]
+    fn rename_esc_returns_to_library_browse() {
+        let mut app = App::new(vec![]);
+        app.mode = Mode::RenameInput;
+        app.title_input = "partial edit".to_string();
+
+        app.handle_key_event(key_event(KeyCode::Esc));
+
+        assert_eq!(app.mode, Mode::LibraryBrowse);
+        assert!(app.title_input.is_empty());
+    }
+
+    #[test]
+    fn rename_enter_saves_new_title() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["Old Title"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+        app.mode = Mode::RenameInput;
+        app.title_input = "New Title".to_string();
+
+        app.rename_library_snippet_from(&lib_path);
+
+        assert_eq!(app.mode, Mode::LibraryBrowse);
+        assert!(app.title_input.is_empty());
+        assert_eq!(app.library.as_ref().unwrap().snippets[0].title, "New Title");
+
+        // Verify persisted
+        let lib = crate::library::load_library(&lib_path).unwrap();
+        assert_eq!(lib.snippets[0].title, "New Title");
+    }
+
+    #[test]
+    fn rename_with_empty_title_shows_error() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["Keep Me"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+        app.mode = Mode::RenameInput;
+        app.title_input = "  ".to_string();
+
+        app.rename_library_snippet_from(&lib_path);
+
+        assert_eq!(app.mode, Mode::RenameInput, "Stays in RenameInput on empty");
+        assert!(app.status_message.as_deref().unwrap().contains("empty"));
+
+        // Original title preserved
+        let lib = crate::library::load_library(&lib_path).unwrap();
+        assert_eq!(lib.snippets[0].title, "Keep Me");
+    }
+
+    #[test]
+    fn r_on_empty_library_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+
+        app.handle_key_event(key_event(KeyCode::Char('r')));
+
+        assert_eq!(
+            app.mode,
+            Mode::LibraryBrowse,
+            "Stays in browse on empty lib"
+        );
     }
 }

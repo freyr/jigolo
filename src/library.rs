@@ -74,6 +74,15 @@ pub fn delete_snippet(index: usize, path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn rename_snippet(index: usize, new_title: &str, path: &Path) -> Result<()> {
+    let mut lib = load_library(path)?;
+    if index < lib.snippets.len() {
+        lib.snippets[index].title = new_title.to_string();
+        save_library(&lib, path)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +244,31 @@ content = "body"
 
         let lib = load_library(&path).unwrap();
         assert!(lib.snippets.is_empty());
+    }
+
+    #[test]
+    fn rename_snippet_changes_title() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("library.toml");
+
+        append_snippet(sample_snippet("Old Name"), &path).unwrap();
+
+        rename_snippet(0, "New Name", &path).unwrap();
+
+        let lib = load_library(&path).unwrap();
+        assert_eq!(lib.snippets[0].title, "New Name");
+    }
+
+    #[test]
+    fn rename_snippet_out_of_bounds_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("library.toml");
+
+        append_snippet(sample_snippet("Only"), &path).unwrap();
+
+        rename_snippet(5, "Nope", &path).unwrap();
+
+        let lib = load_library(&path).unwrap();
+        assert_eq!(lib.snippets[0].title, "Only");
     }
 }
