@@ -151,6 +151,7 @@ pub struct App {
     active_pane: Pane,
     pub content: ContentState,
     pub title_input: String,
+    pub title_cursor: usize,
     pub status_message: Option<String>,
     pub library: Option<SnippetLibrary>,
     pub library_selected: usize,
@@ -189,6 +190,7 @@ impl App {
             active_pane: Pane::FileList,
             content: ContentState::new(),
             title_input: String::new(),
+            title_cursor: 0,
             status_message: None,
             library: None,
             library_selected: 0,
@@ -208,10 +210,10 @@ impl App {
 
     fn help_line(&self) -> Line<'static> {
         let key_style = Style::default()
-            .fg(Color::Black)
+            .fg(Color::Cyan)
             .bg(Color::DarkGray)
             .add_modifier(Modifier::BOLD);
-        let desc_style = Style::default().fg(Color::DarkGray);
+        let desc_style = Style::default().fg(Color::Gray);
         let sep = Span::styled("  ", desc_style);
 
         let pairs: Vec<(&str, &str)> = match self.mode {
@@ -333,7 +335,7 @@ impl App {
                         .title(bar_title),
                 );
                 frame.render_widget(input_widget, bar_area);
-                let cursor_x = bar_area.x + 1 + self.title_input.len() as u16;
+                let cursor_x = bar_area.x + 1 + self.title_cursor as u16;
                 let cursor_y = bar_area.y + 1;
                 frame.set_cursor_position((cursor_x, cursor_y));
             } else if let Some(msg) = &self.status_message {
@@ -530,6 +532,7 @@ impl App {
         self.mode = Mode::Normal;
         self.content.visual_anchor = None;
         self.title_input.clear();
+        self.title_cursor = 0;
     }
 
     fn current_source_path(&self) -> String {
@@ -633,6 +636,7 @@ impl App {
             }
             KeyCode::Char('s') => {
                 self.title_input.clear();
+                self.title_cursor = 0;
                 self.mode = Mode::TitleInput;
             }
             _ => {}
@@ -643,16 +647,29 @@ impl App {
         match key_event.code {
             KeyCode::Esc => {
                 self.title_input.clear();
+                self.title_cursor = 0;
                 self.mode = Mode::VisualSelect;
             }
             KeyCode::Enter => {
                 self.save_current_snippet();
             }
             KeyCode::Backspace => {
-                self.title_input.pop();
+                if self.title_cursor > 0 {
+                    self.title_cursor -= 1;
+                    self.title_input.remove(self.title_cursor);
+                }
+            }
+            KeyCode::Left => {
+                self.title_cursor = self.title_cursor.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                if self.title_cursor < self.title_input.len() {
+                    self.title_cursor += 1;
+                }
             }
             KeyCode::Char(c) => {
-                self.title_input.push(c);
+                self.title_input.insert(self.title_cursor, c);
+                self.title_cursor += 1;
             }
             _ => {}
         }
@@ -754,6 +771,7 @@ impl App {
                     && let Some(snippet) = lib.snippets.get(self.library_selected)
                 {
                     self.title_input = snippet.title.clone();
+                    self.title_cursor = self.title_input.len();
                     self.mode = Mode::RenameInput;
                 }
             }
@@ -765,16 +783,29 @@ impl App {
         match key_event.code {
             KeyCode::Esc => {
                 self.title_input.clear();
+                self.title_cursor = 0;
                 self.mode = Mode::LibraryBrowse;
             }
             KeyCode::Enter => {
                 self.rename_library_snippet();
             }
             KeyCode::Backspace => {
-                self.title_input.pop();
+                if self.title_cursor > 0 {
+                    self.title_cursor -= 1;
+                    self.title_input.remove(self.title_cursor);
+                }
+            }
+            KeyCode::Left => {
+                self.title_cursor = self.title_cursor.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                if self.title_cursor < self.title_input.len() {
+                    self.title_cursor += 1;
+                }
             }
             KeyCode::Char(c) => {
-                self.title_input.push(c);
+                self.title_input.insert(self.title_cursor, c);
+                self.title_cursor += 1;
             }
             _ => {}
         }
@@ -786,6 +817,7 @@ impl App {
             None => {
                 self.status_message = Some("Cannot determine library path.".to_string());
                 self.title_input.clear();
+                self.title_cursor = 0;
                 self.mode = Mode::LibraryBrowse;
             }
         }
@@ -812,6 +844,7 @@ impl App {
         }
 
         self.title_input.clear();
+        self.title_cursor = 0;
         self.mode = Mode::LibraryBrowse;
     }
 
@@ -1440,13 +1473,15 @@ mod tests {
     }
 
     #[test]
-    fn title_input_backspace_deletes_last_char() {
+    fn title_input_backspace_deletes_at_cursor() {
         let mut app = App::new(vec![]);
         app.mode = Mode::TitleInput;
         app.title_input = "ABC".to_string();
+        app.title_cursor = 3;
 
         app.handle_key_event(key_event(KeyCode::Backspace));
         assert_eq!(app.title_input, "AB");
+        assert_eq!(app.title_cursor, 2);
     }
 
     #[test]
