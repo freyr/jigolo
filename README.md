@@ -1,4 +1,4 @@
-# Context Manager
+# Jigolo
 
 A TUI for browsing and managing [Claude Code](https://claude.com/claude-code) context files (`CLAUDE.md`). Discover files across directory trees, read them in a dual-pane browser, and build a personal snippet library of reusable rules and patterns.
 
@@ -7,7 +7,7 @@ A TUI for browsing and managing [Claude Code](https://claude.com/claude-code) co
 ### Homebrew
 
 ```sh
-brew install freyr/tap/context-manager
+brew install freyr/tap/jigolo
 ```
 
 ### From source
@@ -18,20 +18,20 @@ cargo install --path .
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/freyr/claude-manager/releases).
+Download from [GitHub Releases](https://github.com/freyr/jigolo/releases).
 
 Shell installer (macOS/Linux):
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/freyr/claude-manager/releases/latest/download/context-manager-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/freyr/jigolo/releases/latest/download/jigolo-installer.sh | sh
 ```
 
 ## Usage
 
 ```sh
-context-manager                    # Browse current directory
-context-manager /path1 /path2     # Browse specific directories
-context-manager --list /path      # List files and exit (no TUI)
+jigolo                    # Browse current directory
+jigolo /path1 /path2     # Browse specific directories
+jigolo --list /path      # List files and exit (no TUI)
 ```
 
 The TUI opens with a dual-pane layout: file tree on the left, content on the right.
@@ -61,7 +61,7 @@ Select text you want to reuse across projects:
 4. Extend selection with `j/k`
 5. Press `s`, type a title, press `Enter`
 
-Snippets are saved to `~/.config/context-manager/library.toml`. Press `L` to browse, rename (`r`), or delete (`d`) saved snippets.
+Snippets are saved to `~/.config/jigolo/library.toml`. Press `L` to browse, rename (`r`), or delete (`d`) saved snippets.
 
 ## License
 

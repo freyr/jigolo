@@ -3,7 +3,7 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 
 fn cmd() -> assert_cmd::Command {
-    let mut c = cargo_bin_cmd!("context-manager");
+    let mut c = cargo_bin_cmd!("jigolo");
     c.arg("--list");
     c
 }
@@ -15,7 +15,7 @@ fn no_args_searches_current_directory() {
 
 #[test]
 fn help_flag_succeeds() {
-    cargo_bin_cmd!("context-manager")
+    cargo_bin_cmd!("jigolo")
         .arg("--help")
         .assert()
         .success()
@@ -24,11 +24,11 @@ fn help_flag_succeeds() {
 
 #[test]
 fn version_flag_succeeds() {
-    cargo_bin_cmd!("context-manager")
+    cargo_bin_cmd!("jigolo")
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("context-manager"));
+        .stdout(predicate::str::contains("jigolo"));
 }
 
 #[test]

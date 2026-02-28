@@ -2,7 +2,7 @@
 title: "ContextManager — Readonly Browser Foundation (Steps 1–5)"
 type: feat
 date: 2026-02-27
-brainstorm: docs/brainstorms/2026-02-27-context-manager-brainstorm.md
+brainstorm: docs/brainstorms/2026-02-27-jigolo-brainstorm.md
 ---
 
 # ContextManager — Readonly Browser Foundation (Steps 1–5)
@@ -68,7 +68,7 @@ A minimal Rust binary that prints "ContextManager v0.1.0" and exits. **Note:** T
 #### Tasks
 
 1. Install Rust via rustup (if not already installed)
-2. Run `cargo init --name context-manager` inside the ContextManager directory
+2. Run `cargo init --name jigolo` inside the ContextManager directory
 3. Edit `src/main.rs` to print the app name and version
 4. Run `cargo run` to verify it works
 5. Run `cargo fmt` and `cargo clippy` — get in the habit
@@ -134,7 +134,7 @@ Searching in: ["/path1", "/path2"]
 $ cargo run -- --help
 A TUI for managing Claude Code context files
 
-Usage: context-manager [PATHS]...
+Usage: jigolo [PATHS]...
 
 Arguments:
   [PATHS]...  Directories to search for CLAUDE.md files [default: .]
@@ -689,7 +689,7 @@ use tempfile::TempDir;
 
 #[test]
 fn no_args_searches_current_directory() {
-    Command::cargo_bin("context-manager")
+    Command::cargo_bin("jigolo")
         .unwrap()
         .assert()
         .success();
@@ -697,7 +697,7 @@ fn no_args_searches_current_directory() {
 
 #[test]
 fn nonexistent_path_warns_on_stderr() {
-    Command::cargo_bin("context-manager")
+    Command::cargo_bin("jigolo")
         .unwrap()
         .arg("/nonexistent/path/that/does/not/exist")
         .assert()
@@ -710,7 +710,7 @@ fn finds_claude_md_in_temp_dir() {
     let tmp = TempDir::new().unwrap();
     std::fs::write(tmp.path().join("CLAUDE.md"), "test").unwrap();
 
-    Command::cargo_bin("context-manager")
+    Command::cargo_bin("jigolo")
         .unwrap()
         .arg(tmp.path())
         .assert()
@@ -720,7 +720,7 @@ fn finds_claude_md_in_temp_dir() {
 
 #[test]
 fn help_flag_succeeds() {
-    Command::cargo_bin("context-manager")
+    Command::cargo_bin("jigolo")
         .unwrap()
         .arg("--help")
         .assert()

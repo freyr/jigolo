@@ -15,7 +15,7 @@ A personal library of reusable CLAUDE.md snippets that lives in a single structu
 - Visual selection in the content pane (vim-style line selection)
 - Save selected text as a library entry with title + optional tags
 - Library stored as a single structured file (TOML or JSON)
-- Storage location: platform data dir (`~/.config/context-manager/` or similar), configurable later
+- Storage location: platform data dir (`~/.config/jigolo/` or similar), configurable later
 - Browse/view saved library entries within the TUI
 
 **Phase 2 — Compose (future):**

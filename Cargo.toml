@@ -1,11 +1,11 @@
 [package]
-name = "context-manager"
+name = "jigolo"
 version = "0.1.0"
 edition = "2024"
 description = "A TUI tool for managing CLAUDE.md context files"
 license = "MIT"
-repository = "https://github.com/freyr/claude-manager"
-homepage = "https://github.com/freyr/claude-manager"
+repository = "https://github.com/freyr/jigolo"
+homepage = "https://github.com/freyr/jigolo"
 
 [dependencies]
 anyhow = "1.0.102"

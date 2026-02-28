@@ -1,4 +1,4 @@
-# Context Manager
+# Jigolo
 
 Rust CLI + TUI that recursively discovers `CLAUDE.md` files across directory trees. Uses ratatui for a dual-pane browser with vim-style navigation.
 

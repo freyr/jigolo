@@ -9,7 +9,7 @@ Initial release.
 - **Dual-pane TUI browser** — left pane shows a tree of discovered CLAUDE.md files, right pane displays content with vim-style cursor navigation (j/k, PageUp/PageDown)
 - **Recursive discovery** — walks directory trees finding CLAUDE.md files, skips node_modules/.git/target and other noise directories
 - **Global CLAUDE.md** — auto-discovers `~/.claude/CLAUDE.md` and prepends it to the file list
-- **Snippet capture** — visual line selection (`v`), title input (`s`), saves to `~/.config/context-manager/library.toml`
+- **Snippet capture** — visual line selection (`v`), title input (`s`), saves to `~/.config/jigolo/library.toml`
 - **Library browser** — press `L` to browse saved snippets with split list/preview pane
 - **Snippet management** — rename (`r`) and delete (`d`) snippets from the library browser
 - **Context-sensitive help bar** — bottom bar shows available keybindings for the current mode

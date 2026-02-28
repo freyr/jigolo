@@ -9,7 +9,7 @@ brainstorm: docs/brainstorms/2026-02-28-rust-learning-curriculum-brainstorm.md
 
 ## Overview
 
-Create a single-file Claude Code skill at `~/.claude/skills/rust-learn/SKILL.md` that teaches Rust to a PHP developer using the context-manager codebase as a living textbook. Claude reads the source files directly and teaches dynamically — no static question banks, no separate reference files.
+Create a single-file Claude Code skill at `~/.claude/skills/rust-learn/SKILL.md` that teaches Rust to a PHP developer using the jigolo codebase as a living textbook. Claude reads the source files directly and teaches dynamically — no static question banks, no separate reference files.
 
 The learner is an experienced PHP/Laravel developer with no compiled-language background, targeting CLI/systems tool development in Rust.
 
@@ -49,7 +49,7 @@ Create `~/.claude/skills/rust-learn/SKILL.md` containing:
 ```yaml
 ---
 name: rust-learn
-description: Interactive Rust learning curriculum using the context-manager codebase.
+description: Interactive Rust learning curriculum using the jigolo codebase.
   Teaches Rust to PHP developers through read-and-explain quizzes with PHP analogies.
   Invoke /rust-learn to start or continue the next lesson.
 ---

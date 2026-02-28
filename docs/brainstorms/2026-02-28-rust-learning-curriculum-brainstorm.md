@@ -5,7 +5,7 @@
 
 ## What We're Building
 
-An interactive Rust learning curriculum that uses this codebase (context-manager) as a living textbook. Invoked via a `/rust-learn` slash command in Claude Code. Organized as a **concept spiral** — 10 thematic clusters that pull examples from across all modules, bridge each concept to PHP equivalents, and test comprehension through read-and-explain quizzes.
+An interactive Rust learning curriculum that uses this codebase (jigolo) as a living textbook. Invoked via a `/rust-learn` slash command in Claude Code. Organized as a **concept spiral** — 10 thematic clusters that pull examples from across all modules, bridge each concept to PHP equivalents, and test comprehension through read-and-explain quizzes.
 
 ### Learner Profile
 

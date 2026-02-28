@@ -29,7 +29,7 @@ pub fn library_path() -> Option<PathBuf> {
 
 pub fn library_path_in(home: &Path) -> PathBuf {
     home.join(".config")
-        .join("context-manager")
+        .join("jigolo")
         .join("library.toml")
 }
 
@@ -198,7 +198,7 @@ content = "body"
         let expected = tmp
             .path()
             .join(".config")
-            .join("context-manager")
+            .join("jigolo")
             .join("library.toml");
         assert_eq!(path, expected);
     }
