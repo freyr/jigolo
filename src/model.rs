@@ -45,6 +45,7 @@ impl fmt::Display for SourceRoot {
 }
 
 /// Return value from run() — keeps all process::exit() calls in main().
+#[derive(Debug)]
 pub enum ExitOutcome {
     Success,
     AllPathsFailed,

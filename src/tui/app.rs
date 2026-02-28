@@ -1,5 +1,6 @@
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 
 use ratatui::DefaultTerminal;
@@ -28,6 +29,7 @@ use tui_tree_widget::Tree;
 use tui_tree_widget::TreeItem;
 use tui_tree_widget::TreeState;
 
+use crate::library::SnippetLibrary;
 use crate::model::SourceRoot;
 
 pub type TreeId = String;
@@ -43,6 +45,7 @@ pub enum Mode {
     Normal,
     VisualSelect,
     TitleInput,
+    LibraryBrowse,
 }
 
 #[derive(Debug)]
@@ -138,25 +141,6 @@ impl ContentState {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct TitleInputState {
-    pub buffer: String,
-}
-
-impl TitleInputState {
-    pub fn insert_char(&mut self, c: char) {
-        self.buffer.push(c);
-    }
-
-    pub fn delete_char(&mut self) {
-        self.buffer.pop();
-    }
-
-    pub fn clear(&mut self) {
-        self.buffer.clear();
-    }
-}
-
 #[derive(Debug)]
 pub struct App {
     pub exit: bool,
@@ -165,8 +149,10 @@ pub struct App {
     tree_items: Vec<TreeItem<'static, TreeId>>,
     active_pane: Pane,
     pub content: ContentState,
-    pub title_input: TitleInputState,
+    pub title_input: String,
     pub status_message: Option<String>,
+    pub library: Option<SnippetLibrary>,
+    pub library_selected: usize,
 }
 
 impl App {
@@ -201,8 +187,10 @@ impl App {
             tree_items,
             active_pane: Pane::FileList,
             content: ContentState::new(),
-            title_input: TitleInputState::default(),
+            title_input: String::new(),
             status_message: None,
+            library: None,
+            library_selected: 0,
         };
 
         app.load_selected_content();
@@ -232,6 +220,7 @@ impl App {
                     ("Tab", "Files"),
                     ("j/k", "Scroll"),
                     ("v", "Select"),
+                    ("L", "Library"),
                 ]
             }
             Mode::Normal => {
@@ -247,6 +236,9 @@ impl App {
             }
             Mode::TitleInput => {
                 vec![("Enter", "Save"), ("Esc", "Cancel")]
+            }
+            Mode::LibraryBrowse => {
+                vec![("j/k", "Navigate"), ("d", "Delete"), ("Esc", "Back")]
             }
         };
 
@@ -308,6 +300,49 @@ impl App {
             frame.render_stateful_widget(tree, chunks[0], &mut self.tree_state);
         }
 
+        if self.mode == Mode::LibraryBrowse {
+            self.draw_library_pane(frame, chunks[1], content_border_style);
+        } else {
+            self.draw_content_pane(frame, chunks[1], content_border_style);
+        }
+
+        // Input/status bar (when active)
+        if has_input_or_status {
+            let bar_area = vertical[1];
+            if self.mode == Mode::TitleInput {
+                let input_widget = Paragraph::new(self.title_input.as_str()).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Yellow))
+                        .title("Snippet title"),
+                );
+                frame.render_widget(input_widget, bar_area);
+                let cursor_x = bar_area.x + 1 + self.title_input.len() as u16;
+                let cursor_y = bar_area.y + 1;
+                frame.set_cursor_position((cursor_x, cursor_y));
+            } else if let Some(msg) = &self.status_message {
+                let status_widget = Paragraph::new(msg.as_str())
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                frame.render_widget(status_widget, bar_area);
+            }
+        }
+
+        // Help bar (always visible)
+        let help_area = if has_input_or_status {
+            vertical[2]
+        } else {
+            vertical[1]
+        };
+        let help = Paragraph::new(self.help_line());
+        frame.render_widget(help, help_area);
+    }
+
+    fn draw_content_pane(
+        &mut self,
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        border_style: Style,
+    ) {
         let content_title = match self.mode {
             Mode::VisualSelect | Mode::TitleInput => {
                 if let Some((start, end)) = self.content.selection_range() {
@@ -316,11 +351,11 @@ impl App {
                     "Content [VISUAL]".to_string()
                 }
             }
-            Mode::Normal => "Content".to_string(),
+            _ => "Content".to_string(),
         };
 
         // Capture viewport height (content area minus 2 for borders)
-        self.content.viewport_height = chunks[1].height.saturating_sub(2);
+        self.content.viewport_height = area.height.saturating_sub(2);
 
         let display_text = self
             .content
@@ -354,52 +389,91 @@ impl App {
                 Line::from(line_text.to_string()).style(style)
             })
             .collect();
-        let content_widget = Paragraph::new(Text::from(lines));
 
-        let content_widget = content_widget
+        let content_widget = Paragraph::new(Text::from(lines))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(content_border_style)
+                    .border_style(border_style)
                     .title(content_title),
             )
             .scroll((self.content.scroll, 0));
-        frame.render_widget(content_widget, chunks[1]);
+        frame.render_widget(content_widget, area);
 
         let mut scrollbar_state =
             ScrollbarState::new(self.content.line_count()).position(self.content.scroll as usize);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-        frame.render_stateful_widget(scrollbar, chunks[1], &mut scrollbar_state);
+        frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    }
 
-        // Input/status bar (when active)
-        if has_input_or_status {
-            let bar_area = vertical[1];
-            if self.mode == Mode::TitleInput {
-                let input_widget = Paragraph::new(self.title_input.buffer.as_str()).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Yellow))
-                        .title("Snippet title"),
-                );
-                frame.render_widget(input_widget, bar_area);
-                let cursor_x = bar_area.x + 1 + self.title_input.buffer.len() as u16;
-                let cursor_y = bar_area.y + 1;
-                frame.set_cursor_position((cursor_x, cursor_y));
-            } else if let Some(msg) = &self.status_message {
-                let status_widget = Paragraph::new(msg.as_str())
-                    .block(Block::default().borders(Borders::ALL).title("Status"));
-                frame.render_widget(status_widget, bar_area);
-            }
+    fn draw_library_pane(
+        &self,
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        border_style: Style,
+    ) {
+        let lib = match &self.library {
+            Some(lib) => lib,
+            None => return,
+        };
+
+        if lib.snippets.is_empty() {
+            let empty_msg = Paragraph::new("No snippets saved. Use v to select, s to save.").block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style)
+                    .title("Library (empty)"),
+            );
+            frame.render_widget(empty_msg, area);
+            return;
         }
 
-        // Help bar (always visible)
-        let help_area = if has_input_or_status {
-            vertical[2]
-        } else {
-            vertical[1]
-        };
-        let help = Paragraph::new(self.help_line());
-        frame.render_widget(help, help_area);
+        let lib_split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .split(area);
+
+        // Snippet list (top)
+        let list_title = format!("Library ({} snippets)", lib.snippets.len());
+        let list_lines: Vec<Line> = lib
+            .snippets
+            .iter()
+            .enumerate()
+            .map(|(i, snippet)| {
+                let style = if i == self.library_selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                Line::from(format!("  {}", snippet.title)).style(style)
+            })
+            .collect();
+        let list_widget = Paragraph::new(Text::from(list_lines)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(list_title),
+        );
+        frame.render_widget(list_widget, lib_split[0]);
+
+        // Preview (bottom)
+        let preview_content = lib
+            .snippets
+            .get(self.library_selected)
+            .map(|s| s.content.as_str())
+            .unwrap_or("");
+        let preview_title = lib
+            .snippets
+            .get(self.library_selected)
+            .map(|s| format!("Preview: {}", s.title))
+            .unwrap_or_else(|| "Preview".to_string());
+        let preview_widget = Paragraph::new(preview_content).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(preview_title),
+        );
+        frame.render_widget(preview_widget, lib_split[1]);
     }
 
     fn select_tree_item(&mut self) {
@@ -428,12 +502,18 @@ impl App {
         }
     }
 
-    fn load_file_content(&mut self, path: &PathBuf) {
+    fn load_file_content(&mut self, path: &Path) {
         let text = match fs::read_to_string(path) {
             Ok(text) => text,
             Err(err) => format!("Error reading {}: {err}", path.display()),
         };
         self.content.load_text(text);
+    }
+
+    fn reset_to_normal(&mut self) {
+        self.mode = Mode::Normal;
+        self.content.visual_anchor = None;
+        self.title_input.clear();
     }
 
     fn current_source_path(&self) -> String {
@@ -467,6 +547,7 @@ impl App {
             Mode::Normal => self.handle_normal_key(key_event),
             Mode::VisualSelect => self.handle_visual_select_key(key_event),
             Mode::TitleInput => self.handle_title_input_key(key_event),
+            Mode::LibraryBrowse => self.handle_library_browse_key(key_event),
         }
     }
 
@@ -514,6 +595,9 @@ impl App {
                 self.content.visual_anchor = Some(self.content.cursor);
                 self.mode = Mode::VisualSelect;
             }
+            KeyCode::Char('L') if self.active_pane == Pane::Content => {
+                self.enter_library_browse();
+            }
             _ => {}
         }
     }
@@ -531,8 +615,8 @@ impl App {
                 self.content.cursor_up();
             }
             KeyCode::Char('s') => {
-                self.mode = Mode::TitleInput;
                 self.title_input.clear();
+                self.mode = Mode::TitleInput;
             }
             _ => {}
         }
@@ -548,10 +632,10 @@ impl App {
                 self.save_current_snippet();
             }
             KeyCode::Backspace => {
-                self.title_input.delete_char();
+                self.title_input.pop();
             }
             KeyCode::Char(c) => {
-                self.title_input.insert_char(c);
+                self.title_input.push(c);
             }
             _ => {}
         }
@@ -562,16 +646,14 @@ impl App {
             Some(path) => self.save_current_snippet_to(&path),
             None => {
                 self.status_message = Some("Cannot determine library path.".to_string());
-                self.mode = Mode::Normal;
-                self.content.visual_anchor = None;
-                self.title_input.clear();
+                self.reset_to_normal();
             }
         }
     }
 
     /// Save snippet to a specific path. Extracted for testability.
-    pub fn save_current_snippet_to(&mut self, path: &std::path::Path) {
-        let title = self.title_input.buffer.trim().to_string();
+    pub fn save_current_snippet_to(&mut self, path: &Path) {
+        let title = self.title_input.trim().to_string();
         if title.is_empty() {
             self.status_message = Some("Title cannot be empty.".to_string());
             return;
@@ -581,8 +663,7 @@ impl App {
             Some(text) => text,
             None => {
                 self.status_message = Some("No text selected.".to_string());
-                self.mode = Mode::Normal;
-                self.content.visual_anchor = None;
+                self.reset_to_normal();
                 return;
             }
         };
@@ -604,9 +685,91 @@ impl App {
             }
         }
 
-        self.mode = Mode::Normal;
-        self.content.visual_anchor = None;
-        self.title_input.clear();
+        self.reset_to_normal();
+    }
+
+    fn enter_library_browse(&mut self) {
+        match crate::library::library_path() {
+            Some(path) => self.enter_library_browse_from(&path),
+            None => {
+                self.status_message = Some("Cannot determine library path.".to_string());
+            }
+        }
+    }
+
+    /// Enter library browse with a specific path. Extracted for testability.
+    pub fn enter_library_browse_from(&mut self, path: &Path) {
+        match crate::library::load_library(path) {
+            Ok(lib) => {
+                self.library = Some(lib);
+                self.library_selected = 0;
+                self.mode = Mode::LibraryBrowse;
+            }
+            Err(err) => {
+                self.status_message = Some(format!("Failed to load library: {err}"));
+            }
+        }
+    }
+
+    fn handle_library_browse_key(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.library = None;
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let max = self
+                    .library
+                    .as_ref()
+                    .map_or(0, |lib| lib.snippets.len().saturating_sub(1));
+                if self.library_selected < max {
+                    self.library_selected += 1;
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.library_selected = self.library_selected.saturating_sub(1);
+            }
+            KeyCode::Char('d') => {
+                self.delete_library_snippet();
+            }
+            _ => {}
+        }
+    }
+
+    fn delete_library_snippet(&mut self) {
+        match crate::library::library_path() {
+            Some(path) => self.delete_library_snippet_from(&path),
+            None => {
+                self.status_message = Some("Cannot determine library path.".to_string());
+            }
+        }
+    }
+
+    /// Delete a library snippet at a specific path. Extracted for testability.
+    pub fn delete_library_snippet_from(&mut self, path: &Path) {
+        let snippet_count = self.library.as_ref().map_or(0, |lib| lib.snippets.len());
+        if snippet_count == 0 {
+            return;
+        }
+
+        match crate::library::delete_snippet(self.library_selected, path) {
+            Ok(()) => {
+                // Reload library from disk
+                if let Ok(lib) = crate::library::load_library(path) {
+                    let new_len = lib.snippets.len();
+                    self.library = Some(lib);
+                    if self.library_selected >= new_len && new_len > 0 {
+                        self.library_selected = new_len - 1;
+                    } else if new_len == 0 {
+                        self.library_selected = 0;
+                    }
+                }
+                self.status_message = Some("Snippet deleted.".to_string());
+            }
+            Err(err) => {
+                self.status_message = Some(format!("Delete failed: {err}"));
+            }
+        }
     }
 }
 
@@ -1069,7 +1232,12 @@ mod tests {
 
     #[test]
     fn ctrl_c_exits_in_any_mode() {
-        for mode in [Mode::Normal, Mode::VisualSelect, Mode::TitleInput] {
+        for mode in [
+            Mode::Normal,
+            Mode::VisualSelect,
+            Mode::TitleInput,
+            Mode::LibraryBrowse,
+        ] {
             let mut app = App::new(vec![]);
             app.mode = mode;
             app.handle_key_event(KeyEvent {
@@ -1088,29 +1256,6 @@ mod tests {
         app.status_message = Some("Test message".to_string());
         app.handle_key_event(key_event(KeyCode::Char('a')));
         assert!(app.status_message.is_none());
-    }
-
-    // --- TitleInputState unit tests ---
-
-    #[test]
-    fn title_input_insert_and_delete() {
-        let mut input = TitleInputState::default();
-        input.insert_char('h');
-        input.insert_char('i');
-        assert_eq!(input.buffer, "hi");
-
-        input.delete_char();
-        assert_eq!(input.buffer, "h");
-
-        input.clear();
-        assert_eq!(input.buffer, "");
-    }
-
-    #[test]
-    fn title_input_delete_on_empty_is_noop() {
-        let mut input = TitleInputState::default();
-        input.delete_char();
-        assert_eq!(input.buffer, "");
     }
 
     // --- Visual selection integration tests ---
@@ -1177,7 +1322,7 @@ mod tests {
         app.handle_key_event(key_event(KeyCode::Char('s')));
 
         assert_eq!(app.mode, Mode::TitleInput);
-        assert!(app.title_input.buffer.is_empty());
+        assert!(app.title_input.is_empty());
     }
 
     #[test]
@@ -1211,17 +1356,17 @@ mod tests {
 
         app.handle_key_event(key_event(KeyCode::Char('A')));
         app.handle_key_event(key_event(KeyCode::Char('B')));
-        assert_eq!(app.title_input.buffer, "AB");
+        assert_eq!(app.title_input, "AB");
     }
 
     #[test]
     fn title_input_backspace_deletes_last_char() {
         let mut app = App::new(vec![]);
         app.mode = Mode::TitleInput;
-        app.title_input.buffer = "ABC".to_string();
+        app.title_input = "ABC".to_string();
 
         app.handle_key_event(key_event(KeyCode::Backspace));
-        assert_eq!(app.title_input.buffer, "AB");
+        assert_eq!(app.title_input, "AB");
     }
 
     #[test]
@@ -1229,13 +1374,13 @@ mod tests {
         let mut app = App::new(vec![]);
         app.mode = Mode::TitleInput;
         app.content.visual_anchor = Some(2);
-        app.title_input.buffer = "partial".to_string();
+        app.title_input = "partial".to_string();
 
         app.handle_key_event(key_event(KeyCode::Esc));
 
         assert_eq!(app.mode, Mode::VisualSelect);
         assert_eq!(app.content.visual_anchor, Some(2), "Selection preserved");
-        assert!(app.title_input.buffer.is_empty(), "Input cleared on Esc");
+        assert!(app.title_input.is_empty(), "Input cleared on Esc");
     }
 
     #[test]
@@ -1245,7 +1390,7 @@ mod tests {
 
         let mut app = App::new(vec![]);
         app.mode = Mode::TitleInput;
-        app.title_input.buffer = "  ".to_string();
+        app.title_input = "  ".to_string();
 
         app.save_current_snippet_to(&library_path);
 
@@ -1263,7 +1408,7 @@ mod tests {
         app.content.visual_anchor = Some(1);
         app.content.cursor = 2;
         app.mode = Mode::TitleInput;
-        app.title_input.buffer = "My Snippet".to_string();
+        app.title_input = "My Snippet".to_string();
 
         // We can't easily override library_path() in tests, so test the
         // underlying logic via save_current_snippet_to().
@@ -1271,7 +1416,7 @@ mod tests {
 
         assert_eq!(app.mode, Mode::Normal);
         assert_eq!(app.content.visual_anchor, None);
-        assert!(app.title_input.buffer.is_empty());
+        assert!(app.title_input.is_empty());
         assert!(app.status_message.as_deref().unwrap().contains("saved"),);
 
         // Verify the file was written
@@ -1316,7 +1461,7 @@ mod tests {
         for c in "My Rules".chars() {
             app.handle_key_event(key_event(KeyCode::Char(c)));
         }
-        assert_eq!(app.title_input.buffer, "My Rules");
+        assert_eq!(app.title_input, "My Rules");
 
         // Save to a temp library path
         let tmp_lib = TempDir::new().unwrap();
@@ -1329,5 +1474,174 @@ mod tests {
         assert_eq!(lib.snippets.len(), 1);
         assert_eq!(lib.snippets[0].title, "My Rules");
         assert_eq!(lib.snippets[0].content, "# Rules\n- Rule A\n- Rule B");
+    }
+
+    // --- Library browse tests ---
+
+    fn library_with_snippets(path: &std::path::Path, titles: &[&str]) {
+        for title in titles {
+            crate::library::append_snippet(
+                crate::library::Snippet {
+                    title: title.to_string(),
+                    content: format!("Content of {title}"),
+                    source: "/test/CLAUDE.md".to_string(),
+                },
+                path,
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn l_in_content_pane_enters_library_browse() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["Snippet A"]);
+
+        let mut app = App::new(vec![]);
+        app.active_pane = Pane::Content;
+        app.enter_library_browse_from(&lib_path);
+
+        assert_eq!(app.mode, Mode::LibraryBrowse);
+        assert_eq!(app.library_selected, 0);
+        assert!(app.library.is_some());
+        assert_eq!(app.library.as_ref().unwrap().snippets.len(), 1);
+    }
+
+    #[test]
+    fn l_in_file_list_does_not_enter_library_browse() {
+        let mut app = App::new(vec![]);
+        app.active_pane = Pane::FileList;
+
+        app.handle_key_event(key_event(KeyCode::Char('L')));
+
+        assert_eq!(app.mode, Mode::Normal);
+    }
+
+    #[test]
+    fn esc_in_library_browse_returns_to_normal() {
+        let mut app = App::new(vec![]);
+        app.mode = Mode::LibraryBrowse;
+        app.library = Some(crate::library::SnippetLibrary::default());
+
+        app.handle_key_event(key_event(KeyCode::Esc));
+
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(app.library.is_none(), "Library freed on exit");
+    }
+
+    #[test]
+    fn q_in_library_browse_returns_to_normal_not_exit() {
+        let mut app = App::new(vec![]);
+        app.mode = Mode::LibraryBrowse;
+        app.library = Some(crate::library::SnippetLibrary::default());
+
+        app.handle_key_event(key_event(KeyCode::Char('q')));
+
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(!app.exit, "q should not exit the app from LibraryBrowse");
+    }
+
+    #[test]
+    fn jk_in_library_browse_navigates() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["A", "B", "C"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+        assert_eq!(app.library_selected, 0);
+
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.library_selected, 1);
+
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.library_selected, 2);
+
+        // Clamp at end
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.library_selected, 2);
+
+        app.handle_key_event(key_event(KeyCode::Char('k')));
+        assert_eq!(app.library_selected, 1);
+
+        // Clamp at start
+        app.handle_key_event(key_event(KeyCode::Char('k')));
+        app.handle_key_event(key_event(KeyCode::Char('k')));
+        assert_eq!(app.library_selected, 0);
+    }
+
+    #[test]
+    fn d_in_library_browse_deletes_snippet() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["A", "B", "C"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+
+        // Select "B" (index 1) and delete it
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.library_selected, 1);
+
+        app.delete_library_snippet_from(&lib_path);
+
+        assert_eq!(app.library.as_ref().unwrap().snippets.len(), 2);
+        assert_eq!(app.library.as_ref().unwrap().snippets[0].title, "A");
+        assert_eq!(app.library.as_ref().unwrap().snippets[1].title, "C");
+        assert_eq!(app.library_selected, 1, "Selected index stays at 1 (now C)");
+
+        // Verify persisted
+        let lib = crate::library::load_library(&lib_path).unwrap();
+        assert_eq!(lib.snippets.len(), 2);
+    }
+
+    #[test]
+    fn d_on_last_item_adjusts_selection() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["A", "B"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+
+        // Select last item and delete
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.library_selected, 1);
+
+        app.delete_library_snippet_from(&lib_path);
+
+        assert_eq!(app.library.as_ref().unwrap().snippets.len(), 1);
+        assert_eq!(app.library_selected, 0, "Adjusted to last valid index");
+    }
+
+    #[test]
+    fn d_on_empty_library_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+
+        assert!(app.library.as_ref().unwrap().snippets.is_empty());
+
+        app.delete_library_snippet_from(&lib_path);
+
+        assert!(app.library.as_ref().unwrap().snippets.is_empty());
+    }
+
+    #[test]
+    fn library_browse_loads_from_disk() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["X", "Y"]);
+
+        let mut app = App::new(vec![]);
+        app.enter_library_browse_from(&lib_path);
+
+        let lib = app.library.as_ref().unwrap();
+        assert_eq!(lib.snippets.len(), 2);
+        assert_eq!(lib.snippets[0].title, "X");
+        assert_eq!(lib.snippets[1].title, "Y");
     }
 }

@@ -65,6 +65,15 @@ pub fn append_snippet(snippet: Snippet, path: &Path) -> Result<()> {
     save_library(&lib, path)
 }
 
+pub fn delete_snippet(index: usize, path: &Path) -> Result<()> {
+    let mut lib = load_library(path)?;
+    if index < lib.snippets.len() {
+        lib.snippets.remove(index);
+        save_library(&lib, path)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +192,48 @@ content = "body"
             .join("context-manager")
             .join("library.toml");
         assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn delete_snippet_removes_by_index() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("library.toml");
+
+        append_snippet(sample_snippet("First"), &path).unwrap();
+        append_snippet(sample_snippet("Second"), &path).unwrap();
+        append_snippet(sample_snippet("Third"), &path).unwrap();
+
+        delete_snippet(1, &path).unwrap();
+
+        let lib = load_library(&path).unwrap();
+        assert_eq!(lib.snippets.len(), 2);
+        assert_eq!(lib.snippets[0].title, "First");
+        assert_eq!(lib.snippets[1].title, "Third");
+    }
+
+    #[test]
+    fn delete_snippet_out_of_bounds_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("library.toml");
+
+        append_snippet(sample_snippet("Only"), &path).unwrap();
+
+        delete_snippet(5, &path).unwrap();
+
+        let lib = load_library(&path).unwrap();
+        assert_eq!(lib.snippets.len(), 1);
+    }
+
+    #[test]
+    fn delete_snippet_from_single_item_library() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("library.toml");
+
+        append_snippet(sample_snippet("Solo"), &path).unwrap();
+
+        delete_snippet(0, &path).unwrap();
+
+        let lib = load_library(&path).unwrap();
+        assert!(lib.snippets.is_empty());
     }
 }
