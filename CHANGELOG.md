@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+### Features
+
+- **In-place text editing** — press `e` to edit CLAUDE.md files and settings files directly in the TUI using tui-textarea, with dirty tracking, explicit save (`Ctrl+S`), atomic writes, and double-`Esc` to discard unsaved changes
+
+### Fixes
+
+- **File list navigation** — `j`/`k` now skip folder nodes so the cursor always lands on a file, preventing the content pane from appearing unresponsive
+
+### Internal
+
+- **Crate structure** — moved business logic from `main.rs` to `lib.rs`, eliminating duplicate module compilation during tests
+
 ## 0.2.0
 
 ### Features
