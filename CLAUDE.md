@@ -14,6 +14,10 @@ cargo clippy -- -D warnings    # Lint with warnings as errors
 cargo fmt                      # Format code
 ```
 
+## Code Verification
+
+Always use the `rust-cargo` MCP tool for code verification. Run `cargo-clippy` (with `all_targets` and `warnings_as_errors` enabled) as part of every verification pass.
+
 ## Critical Rules
 
 - No `unwrap()` or `expect()` in application code (only in tests)
