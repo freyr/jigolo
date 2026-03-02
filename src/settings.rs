@@ -328,7 +328,7 @@ fn format_permissions(val: &serde_json::Value, lines: &mut Vec<String>) {
             if arr.is_empty() {
                 continue;
             }
-            lines.push(format!("  Permissions ({category}):"));
+            lines.push(format!("  ▾ Permissions ({category}):"));
             for item in arr {
                 lines.push(format!("    {}", display_scalar(item)));
             }
@@ -352,7 +352,7 @@ fn format_mcp_servers(val: &serde_json::Value, lines: &mut Vec<String>) {
         }
     };
 
-    lines.push("  MCP Servers:".to_string());
+    lines.push("  ▾ MCP Servers:".to_string());
     for (name, config) in obj {
         if let Some(cmd) = config.get("command") {
             let args = config
@@ -380,7 +380,7 @@ fn format_hooks(val: &serde_json::Value, lines: &mut Vec<String>) {
         }
     };
 
-    lines.push("  Hooks:".to_string());
+    lines.push("  ▾ Hooks:".to_string());
     for (event, hook_config) in obj {
         if let Some(arr) = hook_config.as_array() {
             for hook in arr {
@@ -405,7 +405,7 @@ fn format_plugins(val: &serde_json::Value, lines: &mut Vec<String>) {
         }
     };
 
-    lines.push("  Plugins:".to_string());
+    lines.push("  ▾ Plugins:".to_string());
     for plugin in arr {
         lines.push(format!("    {}", display_scalar(plugin)));
     }
@@ -420,7 +420,7 @@ fn format_env(val: &serde_json::Value, lines: &mut Vec<String>) {
         }
     };
 
-    lines.push("  Env:".to_string());
+    lines.push("  ▾ Env:".to_string());
     for (key, val) in obj {
         lines.push(format!("    {key}={}", display_scalar(val)));
     }

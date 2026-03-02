@@ -312,7 +312,7 @@ impl SettingsState {
     }
 
     /// Toggles the collapsed state of the line at `line_idx`.
-    /// Only works on foldable lines. Updates `▾`/`▸` on top-level headers.
+    /// Only works on foldable lines. Updates `▾`/`▸` indicator in the line.
     pub fn toggle_fold(&mut self, line_idx: usize) {
         if !self.is_foldable(line_idx) {
             return;
@@ -320,16 +320,16 @@ impl SettingsState {
         if self.collapsed.contains(&line_idx) {
             self.collapsed.remove(&line_idx);
             if let Some(line) = self.lines.get_mut(line_idx)
-                && line.starts_with('▸')
+                && let Some(pos) = line.find('▸')
             {
-                line.replace_range(..3, "▾");
+                line.replace_range(pos..pos + 3, "▾");
             }
         } else {
             self.collapsed.insert(line_idx);
             if let Some(line) = self.lines.get_mut(line_idx)
-                && line.starts_with('▾')
+                && let Some(pos) = line.find('▾')
             {
-                line.replace_range(..3, "▸");
+                line.replace_range(pos..pos + 3, "▸");
             }
         }
     }
@@ -3572,7 +3572,7 @@ mod tests {
         let app = settings_app_with_lines(vec![
             "▾ Global (/path)",
             "  Model: opus",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx rust-cargo",
         ]);
         assert!(app.settings_state.is_foldable(0), "Top header is foldable");
@@ -3585,7 +3585,7 @@ mod tests {
     fn parent_for_returns_nearest_ancestor() {
         let app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
         assert_eq!(app.settings_state.parent_for(0), None);
@@ -3598,7 +3598,7 @@ mod tests {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
             "  Model: opus",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
         app.settings_state.toggle_fold(0);
@@ -3619,12 +3619,12 @@ mod tests {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
             "  Model: opus",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
             "    github: gh",
             "  Thinking: true",
         ]);
-        // Fold "  MCP Servers:"
+        // Fold "  ▾ MCP Servers:"
         app.settings_state.toggle_fold(2);
         assert!(app.settings_state.is_line_visible(0));
         assert!(app.settings_state.is_line_visible(1), "Model still visible");
@@ -3673,7 +3673,7 @@ mod tests {
     fn cursor_skips_sub_section_collapsed_lines() {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
             "    github: gh",
             "  Thinking: true",
@@ -3689,10 +3689,10 @@ mod tests {
     fn left_arrow_on_foldable_collapses() {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
-        app.settings_state.cursor = 1; // On "  MCP Servers:"
+        app.settings_state.cursor = 1; // On "  ▾ MCP Servers:"
 
         app.handle_key_event(key_event(KeyCode::Left));
         assert!(
@@ -3705,7 +3705,7 @@ mod tests {
     fn left_arrow_on_leaf_jumps_to_parent() {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
         app.settings_state.cursor = 2; // On "    rust-cargo: npx"
@@ -3721,7 +3721,7 @@ mod tests {
     fn left_on_collapsed_foldable_jumps_to_parent() {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
         app.settings_state.toggle_fold(1); // Already collapsed
@@ -3738,7 +3738,7 @@ mod tests {
     fn right_arrow_on_collapsed_sub_section_expands() {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
         app.settings_state.toggle_fold(1);
@@ -3765,7 +3765,7 @@ mod tests {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
             "  Model: opus",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
             "    github: gh",
         ]);
@@ -3782,7 +3782,7 @@ mod tests {
     fn nested_fold_parent_hides_expanded_children() {
         let mut app = settings_app_with_lines(vec![
             "▾ Global (/path)",
-            "  MCP Servers:",
+            "  ▾ MCP Servers:",
             "    rust-cargo: npx",
         ]);
         // Children of MCP Servers are expanded, but fold the parent
@@ -3798,5 +3798,37 @@ mod tests {
 
         app.settings_state.collapsed.clear();
         assert!(app.settings_state.collapsed.is_empty());
+    }
+
+    #[test]
+    fn sub_header_indicator_toggles_on_fold() {
+        let mut app = settings_app_with_lines(vec![
+            "▾ Global (/path)",
+            "  ▾ MCP Servers:",
+            "    rust-cargo: npx",
+        ]);
+        assert!(app.settings_state.lines[1].contains('▾'));
+
+        app.settings_state.toggle_fold(1);
+        assert!(
+            app.settings_state.lines[1].contains('▸'),
+            "Should show collapsed indicator"
+        );
+
+        app.settings_state.toggle_fold(1);
+        assert!(
+            app.settings_state.lines[1].contains('▾'),
+            "Should show expanded indicator again"
+        );
+    }
+
+    #[test]
+    fn top_header_indicator_toggles_on_fold() {
+        let mut app = settings_app_with_lines(vec!["▾ Global (/path)", "  Model: opus"]);
+        app.settings_state.toggle_fold(0);
+        assert!(app.settings_state.lines[0].starts_with('▸'));
+
+        app.settings_state.toggle_fold(0);
+        assert!(app.settings_state.lines[0].starts_with('▾'));
     }
 }
