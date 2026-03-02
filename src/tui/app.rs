@@ -737,23 +737,13 @@ impl App {
         self.edit_state = Some(edit);
     }
 
-    /// If the cursor is on a root (folder) node, move down to the next file.
-    fn skip_root_node_down(&mut self) {
-        if self.tree_state.selected().len() == 1 {
-            self.tree_state.key_down();
-        }
-    }
-
-    /// If the cursor is on a root (folder) node, move up to the previous file.
-    fn skip_root_node_up(&mut self) {
-        if self.tree_state.selected().len() == 1 {
-            self.tree_state.key_up();
-        }
-    }
-
     fn load_selected_content(&mut self) {
         let selected = self.tree_state.selected();
         if selected.len() < 2 {
+            self.content.text = None;
+            self.content.scroll = 0;
+            self.content.cursor = 0;
+            self.content.visual_anchor = None;
             return;
         }
 
@@ -1098,12 +1088,10 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_down();
-                self.skip_root_node_down();
                 self.load_selected_content();
             }
             KeyCode::Up | KeyCode::Char('k') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_up();
-                self.skip_root_node_up();
                 self.load_selected_content();
             }
             KeyCode::Left | KeyCode::Char('h') if self.active_pane == Pane::FileList => {
@@ -1506,6 +1494,80 @@ mod tests {
 
         app.handle_key_event(key_event(KeyCode::Down));
         assert_eq!(app.tree_state.selected(), initial_selected);
+    }
+
+    /// Render the app once so TreeState populates `last_identifiers`,
+    /// enabling `key_down()`/`key_up()` navigation in tests.
+    fn render_once(app: &mut App) {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+    }
+
+    #[test]
+    fn jk_can_land_on_folder_node() {
+        let mut app = App::new(sample_roots());
+        render_once(&mut app);
+
+        // App starts on first file /a/CLAUDE.md — selected len is 2
+        assert_eq!(app.tree_state.selected().len(), 2);
+
+        // Press k (up) — should land on the /a folder node (len 1)
+        app.handle_key_event(key_event(KeyCode::Char('k')));
+        assert_eq!(
+            app.tree_state.selected().len(),
+            1,
+            "k should be able to land on a folder node"
+        );
+    }
+
+    #[test]
+    fn folder_selection_clears_content_pane() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("CLAUDE.md");
+        fs::write(&file, "Some content").unwrap();
+
+        let roots = vec![SourceRoot {
+            path: tmp.path().to_path_buf(),
+            files: vec![file],
+        }];
+        let mut app = App::new(roots);
+
+        // Content is loaded on startup
+        assert!(app.content.text.is_some());
+
+        // Select the root/folder node
+        app.tree_state
+            .select(vec![tmp.path().display().to_string()]);
+        app.load_selected_content();
+
+        assert!(
+            app.content.text.is_none(),
+            "Content pane should be cleared when a folder is selected"
+        );
+    }
+
+    #[test]
+    fn left_arrow_to_parent_clears_content() {
+        let mut app = App::new(sample_roots());
+        render_once(&mut app);
+
+        // Start on first file — content is loaded
+        assert_eq!(app.tree_state.selected().len(), 2);
+        assert!(app.content.text.is_some());
+
+        // Press Left — should navigate to parent folder
+        app.handle_key_event(key_event(KeyCode::Left));
+
+        assert_eq!(
+            app.tree_state.selected().len(),
+            1,
+            "Left should navigate to parent folder"
+        );
+        assert!(
+            app.content.text.is_none(),
+            "Content should be cleared when folder is selected via Left"
+        );
     }
 
     #[test]
