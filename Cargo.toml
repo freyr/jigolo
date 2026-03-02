@@ -1,6 +1,6 @@
 [package]
 name = "jigolo"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "A TUI tool for managing CLAUDE.md context files"
 license = "MIT"

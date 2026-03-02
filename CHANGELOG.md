@@ -1,9 +1,23 @@
 # Changelog
 
-## 0.3.0
+## 0.3.1
 
 ### Features
 
+- **Scan depth limit** — default scan depth reduced from 100 to 3 levels for faster directory traversal; override with `--depth N` when deeper scanning is needed
+
+### Fixes
+
+- **Folder navigation** — folder nodes are now selectable in the file tree; the content pane clears when a folder is selected instead of showing stale file content
+- **Left arrow on folders** — pressing Left on a closed folder no longer causes the cursor to disappear
+- **Enter key removed** — removed the misleading Enter/"Open" keybinding from the file tree since it duplicated existing arrow key behavior
+- **Cursor visibility** — replaced underline cursor with reversed (inverted) style in the content and settings panes so the cursor is visible on empty lines
+- **IO warning noise** — broken symlinks, permission errors, and inaccessible files (e.g. Google Drive placeholders) are now silently skipped instead of printing warnings to stderr
+
+## 0.3.0
+
+### Features
+    
 - **In-place text editing** — press `e` to edit CLAUDE.md files and settings files directly in the TUI using tui-textarea, with dirty tracking, explicit save (`Ctrl+S`), atomic writes, and double-`Esc` to discard unsaved changes
 
 ### Fixes
