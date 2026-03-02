@@ -363,7 +363,6 @@ impl App {
                         ("q", "Quit"),
                         ("Tab", "Content"),
                         ("j/k", "Navigate"),
-                        ("Enter", "Open"),
                     ]
                 }
                 Mode::VisualSelect => {
@@ -752,20 +751,6 @@ impl App {
         }
     }
 
-    fn select_tree_item(&mut self) {
-        let selected = self.tree_state.selected();
-        if selected.is_empty() {
-            return;
-        }
-
-        // A root node has exactly one identifier segment; a file has two.
-        if selected.len() == 1 {
-            self.tree_state.toggle_selected();
-        }
-
-        self.load_selected_content();
-    }
-
     fn load_selected_content(&mut self) {
         let selected = self.tree_state.selected();
         if selected.len() < 2 {
@@ -1110,9 +1095,6 @@ impl App {
                     Pane::FileList => Pane::Content,
                     Pane::Content => Pane::FileList,
                 };
-            }
-            KeyCode::Enter if self.active_pane == Pane::FileList => {
-                self.select_tree_item();
             }
             KeyCode::Down | KeyCode::Char('j') if self.active_pane == Pane::FileList => {
                 self.tree_state.key_down();
@@ -1527,7 +1509,62 @@ mod tests {
     }
 
     #[test]
-    fn select_tree_item_on_root_toggles() {
+    fn enter_in_file_list_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("CLAUDE.md");
+        fs::write(&file, "Test content").unwrap();
+
+        let roots = vec![SourceRoot {
+            path: tmp.path().to_path_buf(),
+            files: vec![file.clone()],
+        }];
+        let mut app = App::new(roots);
+
+        // Snapshot state before pressing Enter
+        let pane_before = app.active_pane;
+        let mode_before = app.mode;
+        let content_before = app.content.text.clone();
+        let selected_before = app.tree_state.selected().to_vec();
+
+        // Press Enter on a file node — should be a no-op
+        app.handle_key_event(key_event(KeyCode::Enter));
+
+        assert_eq!(
+            app.active_pane, pane_before,
+            "Enter should not change active pane"
+        );
+        assert_eq!(app.mode, mode_before, "Enter should not change mode");
+        assert_eq!(
+            app.content.text, content_before,
+            "Enter should not reload content"
+        );
+        assert_eq!(
+            app.tree_state.selected(),
+            selected_before,
+            "Enter should not change selection"
+        );
+    }
+
+    #[test]
+    fn enter_on_root_node_is_noop() {
+        let mut app = App::new(sample_roots());
+
+        // Select a root node
+        app.tree_state.select(vec!["/a".to_string()]);
+        let opened_before = app.tree_state.opened().clone();
+
+        // Press Enter — should not toggle the folder
+        app.handle_key_event(key_event(KeyCode::Enter));
+
+        assert_eq!(
+            app.tree_state.opened().clone(),
+            opened_before,
+            "Enter should not toggle folder open/closed"
+        );
+    }
+
+    #[test]
+    fn toggle_selected_on_root_toggles() {
         let mut app = App::new(sample_roots());
 
         // Directly select a root node (single-segment identifier)
@@ -1539,15 +1576,15 @@ mod tests {
             "Root /a should be open initially"
         );
 
-        // Press Enter on a root — should toggle it closed
-        app.handle_key_event(key_event(KeyCode::Enter));
+        // Toggle via tree_state directly — should close
+        app.tree_state.toggle_selected();
         assert!(
             !app.tree_state.opened().contains(&vec!["/a".to_string()]),
             "Root /a should be closed after toggle"
         );
 
-        // Press Enter again — should toggle it open
-        app.handle_key_event(key_event(KeyCode::Enter));
+        // Toggle again — should open
+        app.tree_state.toggle_selected();
         assert!(
             app.tree_state.opened().contains(&vec!["/a".to_string()]),
             "Root /a should be open after second toggle"
@@ -1575,7 +1612,7 @@ mod tests {
     }
 
     #[test]
-    fn select_tree_item_loads_file_content() {
+    fn load_selected_content_loads_file() {
         let tmp = TempDir::new().unwrap();
 
         let file_a = tmp.path().join("CLAUDE.md");
@@ -1595,12 +1632,12 @@ mod tests {
         // First file is loaded on startup
         assert_eq!(app.content.text.as_deref(), Some("First content"));
 
-        // Select a different file via tree navigation
+        // Select a different file and load content directly
         app.tree_state.select(vec![
             tmp.path().display().to_string(),
             file_b.display().to_string(),
         ]);
-        app.handle_key_event(key_event(KeyCode::Enter));
+        app.load_selected_content();
         assert_eq!(app.content.text.as_deref(), Some("Second content"));
     }
 
@@ -1612,12 +1649,12 @@ mod tests {
         }];
         let mut app = App::new(roots);
 
-        // Directly select the file node
+        // Directly select the file node and load content
         app.tree_state.select(vec![
             "/nonexistent".to_string(),
             "/nonexistent/CLAUDE.md".to_string(),
         ]);
-        app.handle_key_event(key_event(KeyCode::Enter));
+        app.load_selected_content();
         assert!(app.content.text.is_some());
         assert!(
             app.content
@@ -1691,10 +1728,10 @@ mod tests {
         app.content.scroll = 5;
         app.content.cursor = 5;
 
-        // Load file content via select_tree_item
+        // Load file content directly
         app.tree_state
             .select(vec![root_id.clone(), file_id.clone()]);
-        app.handle_key_event(key_event(KeyCode::Enter));
+        app.load_selected_content();
         assert_eq!(app.content.scroll, 0, "Loading new content resets scroll");
         assert_eq!(app.content.cursor, 0, "Loading new content resets cursor");
     }
@@ -1806,7 +1843,7 @@ mod tests {
         let root_id = tmp.path().display().to_string();
         let file_id = file.display().to_string();
         app.tree_state.select(vec![root_id, file_id]);
-        app.handle_key_event(key_event(KeyCode::Enter));
+        app.load_selected_content();
 
         let content = app.content.text.as_deref().unwrap();
         assert!(
@@ -1993,7 +2030,7 @@ mod tests {
         let root_id = tmp.path().display().to_string();
         let file_id = file.display().to_string();
         app.tree_state.select(vec![root_id, file_id]);
-        app.handle_key_event(key_event(KeyCode::Enter));
+        app.load_selected_content();
 
         assert_eq!(app.content.visual_anchor, None);
     }
