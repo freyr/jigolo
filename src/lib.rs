@@ -42,7 +42,7 @@ pub fn run() -> ExitOutcome {
         }
 
         let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-        let files = find_claude_files(&canonical);
+        let files = find_claude_files(&canonical, cli.depth);
         roots.push(SourceRoot {
             path: canonical,
             files,

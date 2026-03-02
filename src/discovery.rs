@@ -41,25 +41,19 @@ pub fn find_global_claude_file_in(home: &Path) -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
-pub fn find_claude_files(root: &Path) -> Vec<PathBuf> {
+/// Default maximum directory depth for scanning.
+pub const DEFAULT_MAX_DEPTH: usize = 3;
+
+/// Finds all `CLAUDE.md` files under `root`, up to `max_depth` levels deep.
+///
+/// Silently skips broken symlinks, permission errors, and other IO failures.
+pub fn find_claude_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = WalkDir::new(root)
         .follow_links(true)
-        .max_depth(100)
+        .max_depth(max_depth)
         .into_iter()
         .filter_entry(should_descend)
-        .filter_map(|result| match result {
-            Ok(entry) => Some(entry),
-            Err(err) => {
-                eprintln!(
-                    "Warning: {}: {}",
-                    err.path()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "<unknown>".into()),
-                    err
-                );
-                None
-            }
-        })
+        .filter_map(|result| result.ok())
         .filter(|entry| entry.file_type().is_file())
         .filter(|entry| entry.file_name() == "CLAUDE.md")
         .map(|entry| entry.into_path())
@@ -86,7 +80,7 @@ mod tests {
         fs::write(root.join("sub/deep/CLAUDE.md"), "deep").unwrap();
         fs::write(root.join("sub/not-claude.md"), "ignored").unwrap();
 
-        let files = find_claude_files(root);
+        let files = find_claude_files(root, 10);
 
         assert_eq!(files.len(), 3);
         assert!(files.iter().all(|f| f.file_name().unwrap() == "CLAUDE.md"));
@@ -97,7 +91,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("README.md"), "not claude").unwrap();
 
-        let files = find_claude_files(tmp.path());
+        let files = find_claude_files(tmp.path(), DEFAULT_MAX_DEPTH);
 
         assert!(files.is_empty());
     }
@@ -111,7 +105,7 @@ mod tests {
         fs::write(root.join("node_modules/deep/CLAUDE.md"), "skip").unwrap();
         fs::write(root.join("CLAUDE.md"), "keep").unwrap();
 
-        let files = find_claude_files(root);
+        let files = find_claude_files(root, DEFAULT_MAX_DEPTH);
 
         assert_eq!(files.len(), 1);
     }
@@ -141,6 +135,60 @@ mod tests {
     }
 
     #[test]
+    fn default_depth_limits_to_three_levels() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        // Level 1: root/CLAUDE.md
+        fs::write(root.join("CLAUDE.md"), "level 0").unwrap();
+        // Level 2: root/a/CLAUDE.md
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(root.join("a/CLAUDE.md"), "level 1").unwrap();
+        // Level 3: root/a/b/CLAUDE.md
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::write(root.join("a/b/CLAUDE.md"), "level 2").unwrap();
+        // Level 4: root/a/b/c/CLAUDE.md — should be excluded at default depth 3
+        fs::create_dir_all(root.join("a/b/c")).unwrap();
+        fs::write(root.join("a/b/c/CLAUDE.md"), "level 3").unwrap();
+
+        let files = find_claude_files(root, DEFAULT_MAX_DEPTH);
+
+        assert_eq!(files.len(), 3, "Default depth 3 should find 3 files, not 4");
+    }
+
+    #[test]
+    fn custom_depth_overrides_default() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        fs::create_dir_all(root.join("a/b/c")).unwrap();
+        fs::write(root.join("CLAUDE.md"), "level 0").unwrap();
+        fs::write(root.join("a/CLAUDE.md"), "level 1").unwrap();
+        fs::write(root.join("a/b/CLAUDE.md"), "level 2").unwrap();
+        fs::write(root.join("a/b/c/CLAUDE.md"), "level 3").unwrap();
+
+        let files = find_claude_files(root, 10);
+
+        assert_eq!(files.len(), 4, "Depth 10 should find all 4 files");
+    }
+
+    #[test]
+    fn broken_symlinks_are_silently_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        fs::write(root.join("CLAUDE.md"), "keep").unwrap();
+
+        // Create a symlink pointing to a nonexistent target
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/nonexistent/target", root.join("broken_link")).unwrap();
+
+        let files = find_claude_files(root, DEFAULT_MAX_DEPTH);
+
+        assert_eq!(files.len(), 1, "Broken symlinks should be silently skipped");
+    }
+
+    #[test]
     fn results_are_sorted() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
@@ -150,7 +198,7 @@ mod tests {
         fs::write(root.join("z-dir/CLAUDE.md"), "z").unwrap();
         fs::write(root.join("a-dir/CLAUDE.md"), "a").unwrap();
 
-        let files = find_claude_files(root);
+        let files = find_claude_files(root, DEFAULT_MAX_DEPTH);
 
         assert_eq!(files.len(), 2);
         assert!(
