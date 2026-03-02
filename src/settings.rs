@@ -14,6 +14,18 @@ pub struct SettingsCollection {
     pub files: Vec<SettingsFile>,
 }
 
+/// Settings keys rendered in this order. Shared between per-file and merged formatters.
+const ORDERED_SETTINGS_KEYS: &[&str] = &[
+    "model",
+    "defaultMode",
+    "thinking",
+    "permissions",
+    "mcpServers",
+    "hooks",
+    "plugins",
+    "env",
+];
+
 /// Discover settings files using an explicit home directory (for testability).
 pub fn discover_settings_files_in(home: Option<&Path>, project: &Path) -> SettingsCollection {
     let mut files = Vec::new();
@@ -101,25 +113,14 @@ pub fn format_settings_with_map(collection: &SettingsCollection) -> (Vec<String>
             }
         };
 
-        let ordered_keys = [
-            "model",
-            "defaultMode",
-            "thinking",
-            "permissions",
-            "mcpServers",
-            "hooks",
-            "plugins",
-            "env",
-        ];
-
         let before = lines.len();
-        for &key in &ordered_keys {
+        for &key in ORDERED_SETTINGS_KEYS {
             if let Some(val) = obj.get(key) {
                 format_key_value(key, val, &mut lines);
             }
         }
         for (key, val) in obj {
-            if !ordered_keys.contains(&key.as_str()) {
+            if !ORDERED_SETTINGS_KEYS.contains(&key.as_str()) {
                 format_key_value(key, val, &mut lines);
             }
         }
@@ -136,6 +137,120 @@ pub fn format_settings_with_map(collection: &SettingsCollection) -> (Vec<String>
 pub fn format_settings(collection: &SettingsCollection) -> Vec<String> {
     let (lines, _) = format_settings_with_map(collection);
     lines
+}
+
+/// Merges settings files into a single effective JSON value.
+///
+/// Scalars use last-writer-wins. Array fields (permissions sub-keys, plugins)
+/// use set union with deduplication. Hooks are concatenated per event key.
+/// Objects (mcpServers, env) merge by key with later files winning.
+pub fn merge_settings(collection: &SettingsCollection) -> serde_json::Value {
+    let mut result = serde_json::Map::new();
+
+    for file in &collection.files {
+        let Some(obj) = file.value.as_object() else {
+            continue;
+        };
+
+        for (key, val) in obj {
+            match key.as_str() {
+                "permissions" => merge_permissions(&mut result, val),
+                "hooks" => merge_hooks(&mut result, val),
+                "plugins" => merge_array_union(&mut result, "plugins", val),
+                _ => {
+                    // mcpServers, env: merge objects by key; scalars: replace
+                    if val.is_object() {
+                        merge_object(&mut result, key, val);
+                    } else {
+                        result.insert(key.clone(), val.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::Value::Object(result)
+}
+
+fn merge_permissions(result: &mut serde_json::Map<String, serde_json::Value>, val: &serde_json::Value) {
+    let Some(incoming) = val.as_object() else {
+        return;
+    };
+    let existing = result
+        .entry("permissions")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(existing_obj) = existing.as_object_mut() else {
+        return;
+    };
+
+    for (sub_key, sub_val) in incoming {
+        merge_array_union(existing_obj, sub_key, sub_val);
+    }
+}
+
+fn merge_hooks(result: &mut serde_json::Map<String, serde_json::Value>, val: &serde_json::Value) {
+    let Some(incoming) = val.as_object() else {
+        return;
+    };
+    let existing = result
+        .entry("hooks")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(existing_obj) = existing.as_object_mut() else {
+        return;
+    };
+
+    for (event, hooks_val) in incoming {
+        let Some(incoming_arr) = hooks_val.as_array() else {
+            existing_obj.insert(event.clone(), hooks_val.clone());
+            continue;
+        };
+        let entry = existing_obj
+            .entry(event)
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        if let Some(arr) = entry.as_array_mut() {
+            arr.extend(incoming_arr.iter().cloned());
+        }
+    }
+}
+
+fn merge_array_union(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    val: &serde_json::Value,
+) {
+    let Some(incoming_arr) = val.as_array() else {
+        obj.insert(key.to_string(), val.clone());
+        return;
+    };
+    let entry = obj
+        .entry(key)
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    if let Some(existing_arr) = entry.as_array_mut() {
+        for item in incoming_arr {
+            if !existing_arr.contains(item) {
+                existing_arr.push(item.clone());
+            }
+        }
+    }
+}
+
+fn merge_object(
+    result: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    val: &serde_json::Value,
+) {
+    let Some(incoming_obj) = val.as_object() else {
+        result.insert(key.to_string(), val.clone());
+        return;
+    };
+    let entry = result
+        .entry(key)
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    if let Some(existing_obj) = entry.as_object_mut() {
+        for (k, v) in incoming_obj {
+            existing_obj.insert(k.clone(), v.clone());
+        }
+    }
 }
 
 fn format_key_value(key: &str, val: &serde_json::Value, lines: &mut Vec<String>) {
@@ -533,5 +648,143 @@ mod tests {
                 value,
             }],
         }
+    }
+
+    fn two_file_collection(global_json: &str, project_json: &str) -> SettingsCollection {
+        SettingsCollection {
+            files: vec![
+                SettingsFile {
+                    label: "Global".to_string(),
+                    path: PathBuf::from("/global/settings.json"),
+                    value: serde_json::from_str(global_json).unwrap(),
+                },
+                SettingsFile {
+                    label: "Project".to_string(),
+                    path: PathBuf::from("/project/settings.json"),
+                    value: serde_json::from_str(project_json).unwrap(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn merge_scalars_last_writer_wins() {
+        let collection = two_file_collection(
+            r#"{"model":"haiku","defaultMode":"plan"}"#,
+            r#"{"model":"opus"}"#,
+        );
+        let merged = merge_settings(&collection);
+        let obj = merged.as_object().unwrap();
+        assert_eq!(obj.get("model").unwrap().as_str().unwrap(), "opus");
+        assert_eq!(obj.get("defaultMode").unwrap().as_str().unwrap(), "plan");
+    }
+
+    #[test]
+    fn merge_permissions_are_additive() {
+        let collection = two_file_collection(
+            r#"{"permissions":{"allow":["Read","Write"]}}"#,
+            r#"{"permissions":{"allow":["Write","Bash"],"deny":["rm"]}}"#,
+        );
+        let merged = merge_settings(&collection);
+        let perms = merged.get("permissions").unwrap().as_object().unwrap();
+        let allow: Vec<&str> = perms
+            .get("allow")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(allow, vec!["Read", "Write", "Bash"]);
+        let deny: Vec<&str> = perms
+            .get("deny")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(deny, vec!["rm"]);
+    }
+
+    #[test]
+    fn merge_mcp_servers_by_key() {
+        let collection = two_file_collection(
+            r#"{"mcpServers":{"ctx7":{"command":"npx"}}}"#,
+            r#"{"mcpServers":{"ctx7":{"command":"node"},"gh":{"command":"gh"}}}"#,
+        );
+        let merged = merge_settings(&collection);
+        let servers = merged.get("mcpServers").unwrap().as_object().unwrap();
+        assert_eq!(
+            servers.get("ctx7").unwrap().get("command").unwrap().as_str().unwrap(),
+            "node"
+        );
+        assert!(servers.contains_key("gh"));
+    }
+
+    #[test]
+    fn merge_hooks_concatenated() {
+        let collection = two_file_collection(
+            r#"{"hooks":{"preCommit":[{"command":"fmt"}]}}"#,
+            r#"{"hooks":{"preCommit":[{"command":"lint"}],"prePush":[{"command":"test"}]}}"#,
+        );
+        let merged = merge_settings(&collection);
+        let hooks = merged.get("hooks").unwrap().as_object().unwrap();
+        let pre_commit = hooks.get("preCommit").unwrap().as_array().unwrap();
+        assert_eq!(pre_commit.len(), 2);
+        assert!(hooks.contains_key("prePush"));
+    }
+
+    #[test]
+    fn merge_env_last_writer_wins() {
+        let collection = two_file_collection(
+            r#"{"env":{"LOG":"info","HOME":"/a"}}"#,
+            r#"{"env":{"LOG":"debug"}}"#,
+        );
+        let merged = merge_settings(&collection);
+        let env = merged.get("env").unwrap().as_object().unwrap();
+        assert_eq!(env.get("LOG").unwrap().as_str().unwrap(), "debug");
+        assert_eq!(env.get("HOME").unwrap().as_str().unwrap(), "/a");
+    }
+
+    #[test]
+    fn merge_plugins_deduplicated() {
+        let collection = two_file_collection(
+            r#"{"plugins":["a","b"]}"#,
+            r#"{"plugins":["b","c"]}"#,
+        );
+        let merged = merge_settings(&collection);
+        let plugins: Vec<&str> = merged
+            .get("plugins")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(plugins, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn merge_skips_invalid_json() {
+        let collection = SettingsCollection {
+            files: vec![
+                SettingsFile {
+                    label: "Global".to_string(),
+                    path: PathBuf::from("/global"),
+                    value: serde_json::from_str(r#"{"model":"opus"}"#).unwrap(),
+                },
+                SettingsFile {
+                    label: "Project".to_string(),
+                    path: PathBuf::from("/project"),
+                    value: serde_json::Value::String("(invalid JSON)".to_string()),
+                },
+            ],
+        };
+        let merged = merge_settings(&collection);
+        assert_eq!(
+            merged.get("model").unwrap().as_str().unwrap(),
+            "opus"
+        );
     }
 }
