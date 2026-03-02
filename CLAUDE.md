@@ -52,6 +52,41 @@ Always use the `rust-cargo` MCP tool for code verification. Run `cargo-clippy` (
 - Changes to the `SKIP_DIRS` list
 - Architectural changes to the module layout
 
+## Rust Conventions
+
+- Use `cargo check` instead of `cargo build` for fast verification during development.
+- Error handling: `thiserror` v2 for domain/library errors, `anyhow` for application-level code.
+- No `.unwrap()` in library code; use `expect("reason")` only when panic is truly acceptable.
+- Before every commit run: `cargo fmt`, then `cargo clippy --all-targets -- -D warnings`, then `cargo test`.
+- Add `#![deny(clippy::all)]` at crate root. Add `#![warn(clippy::pedantic)]` only after comfortable with baseline warnings.
+- Prefer iterators over manual index loops.
+- Prefer `if let` / `match` over `is_some()` + `unwrap()`.
+- Use `let...else` for early returns from fallible patterns.
+- CLI projects use the clap derive + thiserror + anyhow pattern (see `/rust-cli-scaffold`).
+- Test organization: unit tests in `#[cfg(test)] mod tests` inline, integration tests in `tests/`.
+- All Rust implementation work follows TDD — write failing test first, then implement.
+- Write doc comments on all public items (summary line in third person, then details).
+- Use Context7 to look up crate documentation when uncertain about APIs.
+
+### Beginner Anti-Patterns to Flag in Reviews
+1. Unnecessary `.clone()` to satisfy borrow checker — restructure ownership instead.
+2. `.unwrap()` in non-test code — use `?` with `Result`.
+3. Manual index loops (`for i in 0..len`) — use iterators.
+4. `is_some()` + `unwrap()` — use `if let Some(val)`.
+5. Sentinel values (`-1`, `""`) — use `Option<T>`.
+6. Overuse of `Rc<RefCell<T>>` — redesign data ownership.
+7. Initialize-then-assign pattern — use constructors.
+8. Overly long iterator chains (>3 steps) — break into named functions.
+9. Non-exhaustive match with wildcard catch-all — use explicit arms.
+10. Missing `.context()` on `?` at module boundaries — always add context.
+
+## Workflow
+
+- Every code change (feature, fix, improvement) MUST have a corresponding GitHub Issue created **before** work begins.
+- Use `gh issue create` to create issues. Label them appropriately: `enhancement` for features, `bug` for fixes, `improvement` for refactors/improvements.
+- Reference the issue number in commit messages (e.g., `feat: add search mode (#12)`).
+- Branch names should include the issue number (e.g., `12-add-search-mode`).
+
 ## References
 
 - [Feature plan](docs/plans/2026-02-27-feat-readonly-browser-foundation-plan.md)
