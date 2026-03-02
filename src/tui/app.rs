@@ -35,6 +35,7 @@ use tui_tree_widget::TreeState;
 use crate::library::SnippetLibrary;
 use crate::model::SourceRoot;
 use crate::settings::SettingsCollection;
+use crate::settings::SettingsFile;
 use crate::settings::SettingsLineMap;
 use crate::settings::format_settings_with_map;
 
@@ -162,6 +163,8 @@ pub struct SettingsState {
     pub scroll: u16,
     pub cursor: usize,
     pub viewport_height: u16,
+    /// When true, displays the effective merged settings instead of per-file view.
+    pub merged_view: bool,
 }
 
 impl SettingsState {
@@ -334,11 +337,21 @@ impl App {
             Screen::Settings if self.mode == Mode::Edit => {
                 vec![("Ctrl+S", "Save"), ("Esc", "Cancel")]
             }
+            Screen::Settings if self.settings_state.merged_view => {
+                vec![
+                    ("1", "Files"),
+                    ("2", "Settings"),
+                    ("m", "Per-file"),
+                    ("j/k", "Scroll"),
+                    ("q", "Quit"),
+                ]
+            }
             Screen::Settings => {
                 vec![
                     ("1", "Files"),
                     ("2", "Settings"),
                     ("e", "Edit"),
+                    ("m", "Merge"),
                     ("j/k", "Scroll"),
                     ("q", "Quit"),
                 ]
@@ -401,10 +414,9 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         // Vertical layout: tab_bar + main area + optional input/status bar + help bar
-        let has_input_or_status = self.screen == Screen::Files
-            && (self.mode == Mode::TitleInput
-                || self.mode == Mode::RenameInput
-                || self.status_message.is_some());
+        let has_input_or_status = self.mode == Mode::TitleInput
+            || self.mode == Mode::RenameInput
+            || self.status_message.is_some();
 
         let mut constraints = vec![Constraint::Length(1), Constraint::Min(3)];
         if has_input_or_status {
@@ -554,8 +566,13 @@ impl App {
             })
             .collect();
 
+        let title = if self.settings_state.merged_view {
+            "Settings — Effective"
+        } else {
+            "Settings"
+        };
         let settings_widget = Paragraph::new(Text::from(lines))
-            .block(Block::default().borders(Borders::ALL).title("Settings"))
+            .block(Block::default().borders(Borders::ALL).title(title))
             .scroll((self.settings_state.scroll, 0));
         frame.render_widget(settings_widget, area);
 
@@ -795,12 +812,36 @@ impl App {
     }
 
     fn apply_settings_collection(&mut self, collection: SettingsCollection) {
-        let (lines, line_map) = format_settings_with_map(&collection);
+        self.settings_collection = Some(collection);
+        self.settings_state.merged_view = false;
+        self.rebuild_settings_display();
+    }
+
+    /// Rebuilds the settings display lines from the cached collection.
+    ///
+    /// Uses per-file formatting or merged formatting depending on
+    /// `settings_state.merged_view`.
+    fn rebuild_settings_display(&mut self) {
+        let Some(collection) = &self.settings_collection else {
+            return;
+        };
+        let (lines, line_map) = if self.settings_state.merged_view {
+            let merged = crate::settings::merge_settings(collection);
+            let synthetic = SettingsCollection {
+                files: vec![SettingsFile {
+                    label: "Effective".to_string(),
+                    path: PathBuf::new(),
+                    value: merged,
+                }],
+            };
+            format_settings_with_map(&synthetic)
+        } else {
+            format_settings_with_map(collection)
+        };
         self.settings_state.lines = lines;
         self.settings_state.line_map = line_map;
         self.settings_state.scroll = 0;
         self.settings_state.cursor = 0;
-        self.settings_collection = Some(collection);
     }
 
     /// Returns the file path of the settings file at the current cursor position.
@@ -1003,8 +1044,16 @@ impl App {
 
     fn handle_settings_key(&mut self, key_event: KeyEvent) {
         match key_event.code {
-            KeyCode::Char('e') => {
+            KeyCode::Char('e') if !self.settings_state.merged_view => {
                 self.enter_settings_edit_mode();
+            }
+            KeyCode::Char('e') => {
+                self.status_message =
+                    Some("Edit not available in merged view — press m to switch.".to_string());
+            }
+            KeyCode::Char('m') => {
+                self.settings_state.merged_view = !self.settings_state.merged_view;
+                self.rebuild_settings_display();
             }
             KeyCode::Char('q') => self.exit = true,
             KeyCode::Down | KeyCode::Char('j') => {
@@ -3077,6 +3126,153 @@ mod tests {
                 .contains("No settings file"),
             "Should show no-file message, got: {:?}",
             app.status_message
+        );
+    }
+
+    fn two_file_settings_collection() -> crate::settings::SettingsCollection {
+        crate::settings::SettingsCollection {
+            files: vec![
+                crate::settings::SettingsFile {
+                    label: "Global".to_string(),
+                    path: PathBuf::from("/home/.claude/settings.json"),
+                    value: serde_json::json!({"model": "opus", "permissions": {"allow": ["Read"]}}),
+                },
+                crate::settings::SettingsFile {
+                    label: "Project".to_string(),
+                    path: PathBuf::from("/proj/.claude/settings.json"),
+                    value: serde_json::json!({"model": "haiku", "permissions": {"allow": ["Write"]}}),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn m_key_toggles_merged_view() {
+        let mut app = App::new(vec![]);
+        app.switch_to_settings_with(&two_file_settings_collection());
+
+        // Per-file view has two section headers
+        let headers_before: Vec<_> = app
+            .settings_state
+            .lines
+            .iter()
+            .filter(|l| l.starts_with('\u{25be}'))
+            .collect();
+        assert_eq!(
+            headers_before.len(),
+            2,
+            "Per-file view should have 2 headers"
+        );
+
+        // Toggle to merged
+        app.handle_key_event(key_event(KeyCode::Char('m')));
+        assert!(app.settings_state.merged_view);
+
+        let headers_after: Vec<_> = app
+            .settings_state
+            .lines
+            .iter()
+            .filter(|l| l.starts_with('\u{25be}'))
+            .collect();
+        assert_eq!(headers_after.len(), 1, "Merged view should have 1 header");
+        assert!(
+            headers_after[0].contains("Effective"),
+            "Header should say Effective, got: {}",
+            headers_after[0]
+        );
+    }
+
+    #[test]
+    fn m_key_resets_cursor() {
+        let mut app = App::new(vec![]);
+        app.switch_to_settings_with(&two_file_settings_collection());
+
+        app.settings_state.cursor = 5;
+        app.settings_state.scroll = 3;
+
+        app.handle_key_event(key_event(KeyCode::Char('m')));
+
+        assert_eq!(
+            app.settings_state.cursor, 0,
+            "Cursor should reset on toggle"
+        );
+        assert_eq!(
+            app.settings_state.scroll, 0,
+            "Scroll should reset on toggle"
+        );
+    }
+
+    #[test]
+    fn m_key_round_trip() {
+        let mut app = App::new(vec![]);
+        app.switch_to_settings_with(&two_file_settings_collection());
+        let lines_before = app.settings_state.lines.clone();
+
+        // Toggle to merged, then back
+        app.handle_key_event(key_event(KeyCode::Char('m')));
+        app.handle_key_event(key_event(KeyCode::Char('m')));
+
+        assert!(!app.settings_state.merged_view);
+        assert_eq!(app.settings_state.lines, lines_before);
+    }
+
+    #[test]
+    fn e_disabled_in_merged_view() {
+        let mut app = App::new(vec![]);
+        app.switch_to_settings_with(&two_file_settings_collection());
+        app.screen = Screen::Settings;
+
+        // Toggle to merged
+        app.handle_key_event(key_event(KeyCode::Char('m')));
+
+        // Press e
+        app.handle_key_event(key_event(KeyCode::Char('e')));
+
+        assert_eq!(
+            app.mode,
+            Mode::Normal,
+            "e should not enter edit in merged view"
+        );
+        assert!(
+            app.status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("merged view"),
+            "Should show merged view message, got: {:?}",
+            app.status_message
+        );
+    }
+
+    #[test]
+    fn help_bar_shows_merge_key() {
+        let mut app = App::new(vec![]);
+        app.screen = Screen::Settings;
+        let help = app.help_line();
+        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(
+            help_text.contains("Merge"),
+            "Help bar should show Merge key in per-file view: {help_text}"
+        );
+        assert!(
+            help_text.contains("Edit"),
+            "Help bar should show Edit in per-file view: {help_text}"
+        );
+    }
+
+    #[test]
+    fn help_bar_in_merged_omits_edit() {
+        let mut app = App::new(vec![]);
+        app.screen = Screen::Settings;
+        app.settings_state.merged_view = true;
+        let help = app.help_line();
+        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(
+            help_text.contains("Per-file"),
+            "Help bar should show Per-file in merged view: {help_text}"
+        );
+        assert!(
+            !help_text.contains("Edit"),
+            "Help bar should NOT show Edit in merged view: {help_text}"
         );
     }
 

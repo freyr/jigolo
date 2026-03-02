@@ -172,7 +172,10 @@ pub fn merge_settings(collection: &SettingsCollection) -> serde_json::Value {
     serde_json::Value::Object(result)
 }
 
-fn merge_permissions(result: &mut serde_json::Map<String, serde_json::Value>, val: &serde_json::Value) {
+fn merge_permissions(
+    result: &mut serde_json::Map<String, serde_json::Value>,
+    val: &serde_json::Value,
+) {
     let Some(incoming) = val.as_object() else {
         return;
     };
@@ -716,7 +719,13 @@ mod tests {
         let merged = merge_settings(&collection);
         let servers = merged.get("mcpServers").unwrap().as_object().unwrap();
         assert_eq!(
-            servers.get("ctx7").unwrap().get("command").unwrap().as_str().unwrap(),
+            servers
+                .get("ctx7")
+                .unwrap()
+                .get("command")
+                .unwrap()
+                .as_str()
+                .unwrap(),
             "node"
         );
         assert!(servers.contains_key("gh"));
@@ -749,10 +758,8 @@ mod tests {
 
     #[test]
     fn merge_plugins_deduplicated() {
-        let collection = two_file_collection(
-            r#"{"plugins":["a","b"]}"#,
-            r#"{"plugins":["b","c"]}"#,
-        );
+        let collection =
+            two_file_collection(r#"{"plugins":["a","b"]}"#, r#"{"plugins":["b","c"]}"#);
         let merged = merge_settings(&collection);
         let plugins: Vec<&str> = merged
             .get("plugins")
@@ -782,9 +789,6 @@ mod tests {
             ],
         };
         let merged = merge_settings(&collection);
-        assert_eq!(
-            merged.get("model").unwrap().as_str().unwrap(),
-            "opus"
-        );
+        assert_eq!(merged.get("model").unwrap().as_str().unwrap(), "opus");
     }
 }
