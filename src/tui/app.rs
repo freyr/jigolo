@@ -393,6 +393,8 @@ pub struct App {
     pub settings_collection: Option<SettingsCollection>,
     pub edit_state: Option<EditState>,
     pub compose_state: Option<super::compose::ComposeState>,
+    /// When editing a library snippet, tracks the index being edited.
+    pub editing_snippet_index: Option<usize>,
     pub theme: Theme,
 }
 
@@ -438,6 +440,7 @@ impl App {
             settings_collection: None,
             edit_state: None,
             compose_state: None,
+            editing_snippet_index: None,
             theme: match config.theme.as_deref() {
                 Some("light") => Theme::light(),
                 _ => Theme::dark(),
@@ -549,6 +552,7 @@ impl App {
                     ("3", "Compose"),
                     ("4", "Library"),
                     ("j/k", "Navigate"),
+                    ("e", "Edit"),
                     ("r", "Rename"),
                     ("d", "Delete"),
                     ("q", "Quit"),

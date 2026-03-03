@@ -144,6 +144,12 @@ impl App {
     }
 
     fn save_edit(&mut self) {
+        // If editing a library snippet, save back to library
+        if self.editing_snippet_index.is_some() {
+            self.save_snippet_edit();
+            return;
+        }
+
         let Some(edit) = &self.edit_state else {
             return;
         };
@@ -216,6 +222,7 @@ impl App {
         }
 
         self.edit_state = None;
+        self.editing_snippet_index = None;
         self.mode = Mode::Normal;
     }
 }

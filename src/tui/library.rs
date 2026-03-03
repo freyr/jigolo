@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::path::Path;
+use std::path::PathBuf;
 
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyCode;
@@ -12,8 +14,10 @@ use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
+use tui_textarea::TextArea;
 
 use super::app::App;
+use super::app::EditState;
 use super::app::Mode;
 use super::app::Screen;
 
@@ -132,6 +136,9 @@ impl App {
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.library_selected = self.library_selected.saturating_sub(1);
+            }
+            KeyCode::Char('e') => {
+                self.enter_snippet_edit();
             }
             KeyCode::Char('d') => {
                 self.delete_library_snippet();
@@ -253,6 +260,91 @@ impl App {
             }
             Err(err) => {
                 self.status_message = Some(format!("Delete failed: {err}"));
+            }
+        }
+    }
+
+    /// Enters edit mode for the currently selected snippet.
+    fn enter_snippet_edit(&mut self) {
+        let snippet = match &self.library {
+            Some(lib) => match lib.snippets.get(self.library_selected) {
+                Some(s) => s,
+                None => return,
+            },
+            None => return,
+        };
+
+        let content = snippet.content.clone();
+        let index = self.library_selected;
+
+        let lines: Vec<String> = content.lines().map(String::from).collect();
+        let lines = if lines.is_empty() {
+            vec![String::new()]
+        } else {
+            lines
+        };
+
+        let mut textarea = TextArea::new(lines);
+        textarea.set_tab_length(4);
+        textarea.set_cursor_line_style(self.theme.edit_cursor_line);
+
+        self.edit_state = Some(EditState {
+            textarea,
+            file_path: PathBuf::from("(snippet)"),
+            original_text: content,
+            had_trailing_newline: false,
+            discard_confirmed: false,
+            dirty_cache: Cell::new(Some(false)),
+        });
+        self.editing_snippet_index = Some(index);
+        self.mode = Mode::Edit;
+    }
+
+    /// Saves the edited snippet content back to the library.
+    pub(crate) fn save_snippet_edit(&mut self) {
+        let Some(index) = self.editing_snippet_index else {
+            return;
+        };
+        let Some(edit) = &self.edit_state else {
+            return;
+        };
+
+        let new_content = edit.textarea.lines().join("\n");
+
+        match crate::library::library_path() {
+            Some(path) => self.save_snippet_edit_to(index, &new_content, &path),
+            None => {
+                self.status_message = Some("Cannot determine library path.".to_string());
+            }
+        }
+    }
+
+    /// Saves snippet edit to a specific path (for testability).
+    pub fn save_snippet_edit_to(&mut self, index: usize, new_content: &str, path: &Path) {
+        match crate::library::load_library(path) {
+            Ok(mut lib) => {
+                if let Some(snippet) = lib.snippets.get_mut(index) {
+                    snippet.content = new_content.to_string();
+                    match crate::library::save_library(&lib, path) {
+                        Ok(()) => {
+                            self.library = Some(lib);
+                            self.compose_state = None;
+                            if let Some(edit) = &mut self.edit_state {
+                                edit.original_text = new_content.to_string();
+                                edit.dirty_cache.set(Some(false));
+                            }
+                            self.status_message = Some("Snippet saved.".to_string());
+                        }
+                        Err(err) => {
+                            self.status_message = Some(format!("Save failed: {err}"));
+                        }
+                    }
+                } else {
+                    self.status_message = Some("Snippet no longer exists.".to_string());
+                }
+            }
+            Err(err) => {
+                self.status_message = Some(format!("Save failed: {err}"));
             }
         }
     }
@@ -532,5 +624,113 @@ mod tests {
 
         app.handle_key_event(key_event(KeyCode::Char('1')));
         assert_eq!(app.screen, Screen::Files);
+    }
+
+    #[test]
+    fn e_enters_edit_mode_for_snippet() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["My Snippet"]);
+
+        let mut app = App::new(vec![], &Config::default());
+        app.enter_library_screen_from(&lib_path);
+
+        app.handle_key_event(key_event(KeyCode::Char('e')));
+
+        assert_eq!(app.mode, Mode::Edit);
+        assert_eq!(app.editing_snippet_index, Some(0));
+        let edit = app.edit_state.as_ref().unwrap();
+        assert_eq!(edit.textarea.lines().join("\n"), "Content of My Snippet");
+    }
+
+    #[test]
+    fn e_on_empty_library_does_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        crate::library::save_library(&crate::library::SnippetLibrary::default(), &lib_path)
+            .unwrap();
+
+        let mut app = App::new(vec![], &Config::default());
+        app.enter_library_screen_from(&lib_path);
+
+        app.handle_key_event(key_event(KeyCode::Char('e')));
+
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(app.edit_state.is_none());
+    }
+
+    #[test]
+    fn ctrl_s_saves_snippet_edit_to_library() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["Test"]);
+
+        let mut app = App::new(vec![], &Config::default());
+        app.enter_library_screen_from(&lib_path);
+        app.handle_key_event(key_event(KeyCode::Char('e')));
+        assert_eq!(app.mode, Mode::Edit);
+
+        // Type some new content
+        app.handle_key_event(key_event(KeyCode::Char('!')));
+
+        // Save with Ctrl+S
+        app.save_snippet_edit_to(0, "Updated content", &lib_path);
+
+        // Verify library on disk was updated
+        let lib = crate::library::load_library(&lib_path).unwrap();
+        assert_eq!(lib.snippets[0].content, "Updated content");
+
+        // Status message confirms
+        assert!(app.status_message.as_deref().unwrap().contains("saved"));
+    }
+
+    #[test]
+    fn esc_exits_snippet_edit_clears_index() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["Test"]);
+
+        let mut app = App::new(vec![], &Config::default());
+        app.enter_library_screen_from(&lib_path);
+        app.handle_key_event(key_event(KeyCode::Char('e')));
+        assert_eq!(app.mode, Mode::Edit);
+        assert!(app.editing_snippet_index.is_some());
+
+        // Esc exits (no changes, so clean exit)
+        app.handle_key_event(key_event(KeyCode::Esc));
+
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(app.edit_state.is_none());
+        assert!(app.editing_snippet_index.is_none());
+    }
+
+    #[test]
+    fn snippet_edit_full_cycle() {
+        let tmp = TempDir::new().unwrap();
+        let lib_path = tmp.path().join("library.toml");
+        library_with_snippets(&lib_path, &["A", "B"]);
+
+        let mut app = App::new(vec![], &Config::default());
+        app.enter_library_screen_from(&lib_path);
+
+        // Navigate to second snippet
+        app.handle_key_event(key_event(KeyCode::Char('j')));
+        assert_eq!(app.library_selected, 1);
+
+        // Edit it
+        app.handle_key_event(key_event(KeyCode::Char('e')));
+        assert_eq!(app.mode, Mode::Edit);
+        assert_eq!(app.editing_snippet_index, Some(1));
+
+        // Save with new content
+        app.save_snippet_edit_to(1, "New B content", &lib_path);
+
+        // Verify only second snippet was updated
+        let lib = crate::library::load_library(&lib_path).unwrap();
+        assert_eq!(lib.snippets[0].content, "Content of A");
+        assert_eq!(lib.snippets[1].content, "New B content");
+
+        // Compose state should be invalidated
+        assert!(app.compose_state.is_none());
     }
 }
