@@ -37,6 +37,7 @@ pub enum Screen {
     Files,
     Settings,
     Compose,
+    Library,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +51,6 @@ pub enum Mode {
     Normal,
     VisualSelect,
     TitleInput,
-    LibraryBrowse,
     RenameInput,
     Edit,
     ExportPath,
@@ -513,7 +513,6 @@ impl App {
                         ("j/k", "Scroll"),
                         ("e", "Edit"),
                         ("v", "Select"),
-                        ("L", "Library"),
                         ("T", "Theme"),
                     ]
                 }
@@ -533,24 +532,28 @@ impl App {
                 Mode::TitleInput => {
                     vec![("Enter", "Save"), ("Esc", "Cancel")]
                 }
-                Mode::LibraryBrowse => {
-                    vec![
-                        ("j/k", "Navigate"),
-                        ("r", "Rename"),
-                        ("d", "Delete"),
-                        ("Esc", "Back"),
-                    ]
-                }
-                Mode::RenameInput => {
-                    vec![("Enter", "Save"), ("Esc", "Cancel")]
-                }
                 Mode::Edit => {
                     vec![("Ctrl+S", "Save"), ("Esc", "Cancel")]
                 }
-                Mode::ExportPath => {
+                Mode::RenameInput | Mode::ExportPath => {
                     vec![("Enter", "Export"), ("Esc", "Cancel")]
                 }
             },
+            Screen::Library if self.mode == Mode::RenameInput => {
+                vec![("Enter", "Save"), ("Esc", "Cancel")]
+            }
+            Screen::Library => {
+                vec![
+                    ("1", "Files"),
+                    ("2", "Settings"),
+                    ("3", "Compose"),
+                    ("4", "Library"),
+                    ("j/k", "Navigate"),
+                    ("r", "Rename"),
+                    ("d", "Delete"),
+                    ("q", "Quit"),
+                ]
+            }
         };
 
         let mut spans: Vec<Span> = Vec::new();
@@ -593,6 +596,7 @@ impl App {
             Screen::Files => self.draw_files_screen(frame, main_area),
             Screen::Settings => self.draw_settings_screen(frame, main_area),
             Screen::Compose => self.draw_compose_screen(frame, main_area),
+            Screen::Library => self.draw_library_screen(frame, main_area),
         }
 
         // Input/status bar (when active, Files screen only)
@@ -646,6 +650,7 @@ impl App {
             Span::styled(" [1 Files] ", style_for(Screen::Files)),
             Span::styled(" [2 Settings] ", style_for(Screen::Settings)),
             Span::styled(" [3 Compose] ", style_for(Screen::Compose)),
+            Span::styled(" [4 Library] ", style_for(Screen::Library)),
         ]);
         frame.render_widget(Paragraph::new(tab_line), area);
     }
@@ -723,6 +728,10 @@ impl App {
                     self.enter_compose_screen();
                     return;
                 }
+                KeyCode::Char('4') => {
+                    self.enter_library_screen();
+                    return;
+                }
                 KeyCode::Char('T') => {
                     self.theme = self.theme.toggle();
                     return;
@@ -742,15 +751,18 @@ impl App {
                 Mode::Normal => self.handle_normal_key(key_event),
                 Mode::VisualSelect => self.handle_visual_select_key(key_event),
                 Mode::TitleInput => self.handle_title_input_key(key_event),
-                Mode::LibraryBrowse => self.handle_library_browse_key(key_event),
-                Mode::RenameInput => self.handle_rename_input_key(key_event),
-                Mode::Edit => {}       // handled above
-                Mode::ExportPath => {} // not used on Files screen
+                Mode::Edit => {}                           // handled above
+                Mode::RenameInput | Mode::ExportPath => {} // not used on Files screen
             },
             Screen::Settings => self.handle_settings_key(key_event),
             Screen::Compose => match self.mode {
                 Mode::Normal => self.handle_compose_key(key_event),
                 Mode::ExportPath => self.handle_export_path_key(key_event),
+                _ => {}
+            },
+            Screen::Library => match self.mode {
+                Mode::Normal => self.handle_library_key(key_event),
+                Mode::RenameInput => self.handle_library_rename_key(key_event),
                 _ => {}
             },
         }
@@ -913,7 +925,6 @@ mod tests {
             Mode::Normal,
             Mode::VisualSelect,
             Mode::TitleInput,
-            Mode::LibraryBrowse,
             Mode::RenameInput,
             Mode::Edit,
         ] {

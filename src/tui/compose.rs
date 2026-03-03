@@ -127,11 +127,7 @@ impl App {
         }
     }
 
-    pub(crate) fn draw_compose_screen(
-        &mut self,
-        frame: &mut Frame,
-        area: ratatui::layout::Rect,
-    ) {
+    pub(crate) fn draw_compose_screen(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let library = match &self.library {
             Some(lib) => lib,
             None => {
@@ -245,8 +241,8 @@ impl App {
         frame.render_widget(preview_widget, preview_area);
 
         let preview_line_count = composed.lines().count();
-        let mut preview_scrollbar_state = ScrollbarState::new(preview_line_count)
-            .position(compose.preview_scroll as usize);
+        let mut preview_scrollbar_state =
+            ScrollbarState::new(preview_line_count).position(compose.preview_scroll as usize);
         let preview_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
         frame.render_stateful_widget(
             preview_scrollbar,
@@ -352,8 +348,7 @@ impl App {
             KeyCode::Char('j') | KeyCode::Down => {
                 let line_count = self.composed_text().lines().count();
                 if let Some(cs) = &mut self.compose_state {
-                    let max_scroll =
-                        line_count.saturating_sub(cs.preview_viewport_height as usize);
+                    let max_scroll = line_count.saturating_sub(cs.preview_viewport_height as usize);
                     if (cs.preview_scroll as usize) < max_scroll {
                         cs.preview_scroll += 1;
                     }
