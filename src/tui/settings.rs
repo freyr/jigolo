@@ -250,7 +250,7 @@ mod tests {
         app.mode = Mode::TitleInput;
         app.handle_key_event(key_event(KeyCode::Char('2')));
         assert_eq!(app.screen, Screen::Files, "Should NOT switch screen");
-        assert_eq!(app.title_input, "2", "Should type '2' into input");
+        assert_eq!(app.text_input.text(), "2", "Should type '2' into input");
     }
 
     #[test]

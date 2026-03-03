@@ -384,8 +384,7 @@ pub struct App {
     pub(crate) tree_items: Vec<TreeItem<'static, TreeId>>,
     pub(crate) active_pane: Pane,
     pub content: ContentState,
-    pub title_input: String,
-    pub title_cursor: usize,
+    pub text_input: super::text_input::TextInput,
     pub status_message: Option<String>,
     pub library: Option<SnippetLibrary>,
     pub library_selected: usize,
@@ -431,8 +430,7 @@ impl App {
             tree_items,
             active_pane: Pane::FileList,
             content: ContentState::new(),
-            title_input: String::new(),
-            title_cursor: 0,
+            text_input: super::text_input::TextInput::default(),
             status_message: None,
             library: None,
             library_selected: 0,
@@ -600,14 +598,14 @@ impl App {
                     Mode::ExportPath => "Export path",
                     _ => "Snippet title",
                 };
-                let input_widget = Paragraph::new(self.title_input.as_str()).block(
+                let input_widget = Paragraph::new(self.text_input.text()).block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(self.theme.input_border)
                         .title(bar_title),
                 );
                 frame.render_widget(input_widget, bar_area);
-                let cursor_x = bar_area.x + 1 + self.title_cursor as u16;
+                let cursor_x = bar_area.x + 1 + self.text_input.cursor() as u16;
                 let cursor_y = bar_area.y + 1;
                 frame.set_cursor_position((cursor_x, cursor_y));
             } else if let Some(msg) = &self.status_message {
@@ -671,8 +669,7 @@ impl App {
     pub(crate) fn reset_to_normal(&mut self) {
         self.mode = Mode::Normal;
         self.content.visual_anchor = None;
-        self.title_input.clear();
-        self.title_cursor = 0;
+        self.text_input.clear();
     }
 
     pub(crate) fn current_source_path(&self) -> String {

@@ -328,8 +328,7 @@ impl App {
                         self.status_message = Some("No snippets selected.".to_string());
                     } else {
                         self.mode = Mode::ExportPath;
-                        self.title_input.clear();
-                        self.title_cursor = 0;
+                        self.text_input.clear();
                     }
                 }
             }
@@ -381,33 +380,16 @@ impl App {
             }
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
-                self.title_input.clear();
-                self.title_cursor = 0;
+                self.text_input.clear();
             }
-            KeyCode::Backspace => {
-                if self.title_cursor > 0 {
-                    self.title_cursor -= 1;
-                    self.title_input.remove(self.title_cursor);
-                }
+            _ => {
+                self.text_input.handle_edit_key(key_event.code);
             }
-            KeyCode::Left => {
-                self.title_cursor = self.title_cursor.saturating_sub(1);
-            }
-            KeyCode::Right => {
-                if self.title_cursor < self.title_input.len() {
-                    self.title_cursor += 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                self.title_input.insert(self.title_cursor, c);
-                self.title_cursor += 1;
-            }
-            _ => {}
         }
     }
 
     fn execute_export(&mut self) {
-        let raw_path = self.title_input.trim().to_string();
+        let raw_path = self.text_input.text().trim().to_string();
         if raw_path.is_empty() {
             self.status_message = Some("No path entered.".to_string());
             return;
@@ -462,8 +444,7 @@ impl App {
                     path.display()
                 ));
                 self.mode = Mode::Normal;
-                self.title_input.clear();
-                self.title_cursor = 0;
+                self.text_input.clear();
             }
             Err(err) => {
                 self.status_message = Some(format!("Export failed: {err}"));

@@ -205,8 +205,7 @@ impl App {
                 self.content.cursor_up();
             }
             KeyCode::Char('s') => {
-                self.title_input.clear();
-                self.title_cursor = 0;
+                self.text_input.clear();
                 self.mode = Mode::TitleInput;
             }
             _ => {}
@@ -216,32 +215,15 @@ impl App {
     pub(crate) fn handle_title_input_key(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Esc => {
-                self.title_input.clear();
-                self.title_cursor = 0;
+                self.text_input.clear();
                 self.mode = Mode::VisualSelect;
             }
             KeyCode::Enter => {
                 self.save_current_snippet();
             }
-            KeyCode::Backspace => {
-                if self.title_cursor > 0 {
-                    self.title_cursor -= 1;
-                    self.title_input.remove(self.title_cursor);
-                }
+            _ => {
+                self.text_input.handle_edit_key(key_event.code);
             }
-            KeyCode::Left => {
-                self.title_cursor = self.title_cursor.saturating_sub(1);
-            }
-            KeyCode::Right => {
-                if self.title_cursor < self.title_input.len() {
-                    self.title_cursor += 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                self.title_input.insert(self.title_cursor, c);
-                self.title_cursor += 1;
-            }
-            _ => {}
         }
     }
 
@@ -257,7 +239,7 @@ impl App {
 
     /// Save snippet to a specific path. Extracted for testability.
     pub fn save_current_snippet_to(&mut self, path: &Path) {
-        let title = self.title_input.trim().to_string();
+        let title = self.text_input.text().trim().to_string();
         if title.is_empty() {
             self.status_message = Some("Title cannot be empty.".to_string());
             return;
@@ -900,7 +882,7 @@ mod tests {
         app.handle_key_event(key_event(KeyCode::Char('s')));
 
         assert_eq!(app.mode, Mode::TitleInput);
-        assert!(app.title_input.is_empty());
+        assert!(app.text_input.text().is_empty());
     }
 
     #[test]
@@ -934,19 +916,18 @@ mod tests {
 
         app.handle_key_event(key_event(KeyCode::Char('A')));
         app.handle_key_event(key_event(KeyCode::Char('B')));
-        assert_eq!(app.title_input, "AB");
+        assert_eq!(app.text_input.text(), "AB");
     }
 
     #[test]
     fn title_input_backspace_deletes_at_cursor() {
         let mut app = App::new(vec![], &Config::default());
         app.mode = Mode::TitleInput;
-        app.title_input = "ABC".to_string();
-        app.title_cursor = 3;
+        app.text_input.set("ABC");
 
         app.handle_key_event(key_event(KeyCode::Backspace));
-        assert_eq!(app.title_input, "AB");
-        assert_eq!(app.title_cursor, 2);
+        assert_eq!(app.text_input.text(), "AB");
+        assert_eq!(app.text_input.cursor(), 2);
     }
 
     #[test]
@@ -954,13 +935,13 @@ mod tests {
         let mut app = App::new(vec![], &Config::default());
         app.mode = Mode::TitleInput;
         app.content.visual_anchor = Some(2);
-        app.title_input = "partial".to_string();
+        app.text_input.set("partial");
 
         app.handle_key_event(key_event(KeyCode::Esc));
 
         assert_eq!(app.mode, Mode::VisualSelect);
         assert_eq!(app.content.visual_anchor, Some(2), "Selection preserved");
-        assert!(app.title_input.is_empty(), "Input cleared on Esc");
+        assert!(app.text_input.text().is_empty(), "Input cleared on Esc");
     }
 
     #[test]
@@ -970,7 +951,7 @@ mod tests {
 
         let mut app = App::new(vec![], &Config::default());
         app.mode = Mode::TitleInput;
-        app.title_input = "  ".to_string();
+        app.text_input.set("  ");
 
         app.save_current_snippet_to(&library_path);
 
@@ -988,7 +969,7 @@ mod tests {
         app.content.visual_anchor = Some(1);
         app.content.cursor = 2;
         app.mode = Mode::TitleInput;
-        app.title_input = "My Snippet".to_string();
+        app.text_input.set("My Snippet");
 
         // We can't easily override library_path() in tests, so test the
         // underlying logic via save_current_snippet_to().
@@ -996,7 +977,7 @@ mod tests {
 
         assert_eq!(app.mode, Mode::Normal);
         assert_eq!(app.content.visual_anchor, None);
-        assert!(app.title_input.is_empty());
+        assert!(app.text_input.text().is_empty());
         assert!(app.status_message.as_deref().unwrap().contains("saved"),);
 
         // Verify the file was written
@@ -1041,7 +1022,7 @@ mod tests {
         for c in "My Rules".chars() {
             app.handle_key_event(key_event(KeyCode::Char(c)));
         }
-        assert_eq!(app.title_input, "My Rules");
+        assert_eq!(app.text_input.text(), "My Rules");
 
         // Save to a temp library path
         let tmp_lib = TempDir::new().unwrap();

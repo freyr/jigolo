@@ -152,8 +152,7 @@ impl App {
                 if let Some(lib) = &self.library
                     && let Some(snippet) = lib.snippets.get(self.library_selected)
                 {
-                    self.title_input = snippet.title.clone();
-                    self.title_cursor = self.title_input.len();
+                    self.text_input.set(&snippet.title);
                     self.mode = Mode::RenameInput;
                 }
             }
@@ -165,32 +164,15 @@ impl App {
     pub(crate) fn handle_library_rename_key(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Esc => {
-                self.title_input.clear();
-                self.title_cursor = 0;
+                self.text_input.clear();
                 self.mode = Mode::Normal;
             }
             KeyCode::Enter => {
                 self.rename_library_snippet();
             }
-            KeyCode::Backspace => {
-                if self.title_cursor > 0 {
-                    self.title_cursor -= 1;
-                    self.title_input.remove(self.title_cursor);
-                }
+            _ => {
+                self.text_input.handle_edit_key(key_event.code);
             }
-            KeyCode::Left => {
-                self.title_cursor = self.title_cursor.saturating_sub(1);
-            }
-            KeyCode::Right => {
-                if self.title_cursor < self.title_input.len() {
-                    self.title_cursor += 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                self.title_input.insert(self.title_cursor, c);
-                self.title_cursor += 1;
-            }
-            _ => {}
         }
     }
 
@@ -199,8 +181,7 @@ impl App {
             Some(path) => self.rename_library_snippet_from(&path),
             None => {
                 self.status_message = Some("Cannot determine library path.".to_string());
-                self.title_input.clear();
-                self.title_cursor = 0;
+                self.text_input.clear();
                 self.mode = Mode::Normal;
             }
         }
@@ -208,7 +189,7 @@ impl App {
 
     /// Renames a library snippet. Extracted for testability.
     pub fn rename_library_snippet_from(&mut self, path: &Path) {
-        let new_title = self.title_input.trim().to_string();
+        let new_title = self.text_input.text().trim().to_string();
         if new_title.is_empty() {
             self.status_message = Some("Title cannot be empty.".to_string());
             return;
@@ -227,8 +208,7 @@ impl App {
             }
         }
 
-        self.title_input.clear();
-        self.title_cursor = 0;
+        self.text_input.clear();
         self.mode = Mode::Normal;
     }
 
@@ -540,7 +520,7 @@ mod tests {
         app.handle_key_event(key_event(KeyCode::Char('r')));
 
         assert_eq!(app.mode, Mode::RenameInput);
-        assert_eq!(app.title_input, "My Snippet");
+        assert_eq!(app.text_input.text(), "My Snippet");
     }
 
     #[test]
@@ -551,13 +531,13 @@ mod tests {
         let mut app = App::new(vec![], &Config::default());
         app.enter_library_screen_from(&lib_path);
         app.mode = Mode::RenameInput;
-        app.title_input = "partial edit".to_string();
+        app.text_input.set("partial edit");
 
         app.handle_key_event(key_event(KeyCode::Esc));
 
         assert_eq!(app.screen, Screen::Library);
         assert_eq!(app.mode, Mode::Normal);
-        assert!(app.title_input.is_empty());
+        assert!(app.text_input.text().is_empty());
     }
 
     #[test]
@@ -569,13 +549,13 @@ mod tests {
         let mut app = App::new(vec![], &Config::default());
         app.enter_library_screen_from(&lib_path);
         app.mode = Mode::RenameInput;
-        app.title_input = "New Title".to_string();
+        app.text_input.set("New Title");
 
         app.rename_library_snippet_from(&lib_path);
 
         assert_eq!(app.screen, Screen::Library);
         assert_eq!(app.mode, Mode::Normal);
-        assert!(app.title_input.is_empty());
+        assert!(app.text_input.text().is_empty());
         assert_eq!(app.library.as_ref().unwrap().snippets[0].title, "New Title");
 
         // Verify persisted
@@ -592,7 +572,7 @@ mod tests {
         let mut app = App::new(vec![], &Config::default());
         app.enter_library_screen_from(&lib_path);
         app.mode = Mode::RenameInput;
-        app.title_input = "  ".to_string();
+        app.text_input.set("  ");
 
         app.rename_library_snippet_from(&lib_path);
 
