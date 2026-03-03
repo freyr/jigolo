@@ -284,18 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn help_line_shows_edit_key_on_settings_screen() {
-        let mut app = App::new(vec![], &Config::default());
-        app.screen = Screen::Settings;
-        let help = app.help_line();
-        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(
-            help_text.contains("Edit"),
-            "Help line should show Edit on settings screen: {help_text}"
-        );
-    }
-
-    #[test]
     fn e_on_settings_screen_enters_edit_for_settings_file() {
         let tmp = tempfile::TempDir::new().unwrap();
         let settings_dir = tmp.path().join(".claude");
@@ -535,39 +523,6 @@ mod tests {
                 .contains("merged view"),
             "Should show merged view message, got: {:?}",
             app.status_message
-        );
-    }
-
-    #[test]
-    fn help_bar_shows_merge_key() {
-        let mut app = App::new(vec![], &Config::default());
-        app.screen = Screen::Settings;
-        let help = app.help_line();
-        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(
-            help_text.contains("Merge"),
-            "Help bar should show Merge key in per-file view: {help_text}"
-        );
-        assert!(
-            help_text.contains("Edit"),
-            "Help bar should show Edit in per-file view: {help_text}"
-        );
-    }
-
-    #[test]
-    fn help_bar_in_merged_omits_edit() {
-        let mut app = App::new(vec![], &Config::default());
-        app.screen = Screen::Settings;
-        app.settings_state.merged_view = true;
-        let help = app.help_line();
-        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(
-            help_text.contains("Per-file"),
-            "Help bar should show Per-file in merged view: {help_text}"
-        );
-        assert!(
-            !help_text.contains("Edit"),
-            "Help bar should NOT show Edit in merged view: {help_text}"
         );
     }
 

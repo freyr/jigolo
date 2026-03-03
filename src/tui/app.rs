@@ -459,120 +459,8 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn help_line(&self) -> Line<'static> {
-        let key_style = self.theme.help_key;
-        let desc_style = self.theme.help_desc;
-        let sep = Span::styled("  ", desc_style);
-
-        let pairs: Vec<(&str, &str)> = match self.screen {
-            Screen::Compose if self.mode == Mode::ExportPath => {
-                vec![("Enter", "Export"), ("Esc", "Cancel")]
-            }
-            Screen::Compose => {
-                vec![
-                    ("1", "Files"),
-                    ("2", "Settings"),
-                    ("3", "Compose"),
-                    ("Space", "Toggle"),
-                    ("Tab", "Preview"),
-                    ("w", "Export"),
-                    ("j/k", "Navigate"),
-                    ("q", "Quit"),
-                ]
-            }
-            Screen::Settings if self.mode == Mode::Edit => {
-                vec![("Ctrl+S", "Save"), ("Esc", "Cancel")]
-            }
-            Screen::Settings if self.settings_state.merged_view => {
-                vec![
-                    ("1", "Files"),
-                    ("2", "Settings"),
-                    ("m", "Per-file"),
-                    ("j/k", "Scroll"),
-                    ("h/l", "Fold"),
-                    ("T", "Theme"),
-                    ("q", "Quit"),
-                ]
-            }
-            Screen::Settings => {
-                vec![
-                    ("1", "Files"),
-                    ("2", "Settings"),
-                    ("e", "Edit"),
-                    ("m", "Merge"),
-                    ("j/k", "Scroll"),
-                    ("h/l", "Fold"),
-                    ("T", "Theme"),
-                    ("q", "Quit"),
-                ]
-            }
-            Screen::Files => match self.mode {
-                Mode::Normal if self.active_pane == Pane::Content => {
-                    vec![
-                        ("1", "Files"),
-                        ("2", "Settings"),
-                        ("q", "Quit"),
-                        ("Tab", "Files"),
-                        ("j/k", "Scroll"),
-                        ("e", "Edit"),
-                        ("v", "Select"),
-                        ("T", "Theme"),
-                    ]
-                }
-                Mode::Normal => {
-                    vec![
-                        ("1", "Files"),
-                        ("2", "Settings"),
-                        ("q", "Quit"),
-                        ("Tab", "Content"),
-                        ("j/k", "Navigate"),
-                        ("T", "Theme"),
-                    ]
-                }
-                Mode::VisualSelect => {
-                    vec![("j/k", "Extend"), ("s", "Save"), ("Esc", "Cancel")]
-                }
-                Mode::TitleInput => {
-                    vec![("Enter", "Save"), ("Esc", "Cancel")]
-                }
-                Mode::Edit => {
-                    vec![("Ctrl+S", "Save"), ("Esc", "Cancel")]
-                }
-                Mode::RenameInput | Mode::ExportPath => {
-                    vec![("Enter", "Export"), ("Esc", "Cancel")]
-                }
-            },
-            Screen::Library if self.mode == Mode::RenameInput => {
-                vec![("Enter", "Save"), ("Esc", "Cancel")]
-            }
-            Screen::Library => {
-                vec![
-                    ("1", "Files"),
-                    ("2", "Settings"),
-                    ("3", "Compose"),
-                    ("4", "Library"),
-                    ("j/k", "Navigate"),
-                    ("e", "Edit"),
-                    ("r", "Rename"),
-                    ("d", "Delete"),
-                    ("q", "Quit"),
-                ]
-            }
-        };
-
-        let mut spans: Vec<Span> = Vec::new();
-        for (i, (key, desc)) in pairs.iter().enumerate() {
-            if i > 0 {
-                spans.push(sep.clone());
-            }
-            spans.push(Span::styled(format!(" {key} "), key_style));
-            spans.push(Span::styled(format!(" {desc}"), desc_style));
-        }
-        Line::from(spans)
-    }
-
     pub(crate) fn draw(&mut self, frame: &mut Frame) {
-        // Vertical layout: tab_bar + main area + optional input/status bar + help bar
+        // Vertical layout: tab_bar + main area + optional input/status bar
         let has_input_or_status = self.mode == Mode::TitleInput
             || self.mode == Mode::RenameInput
             || self.mode == Mode::ExportPath
@@ -582,7 +470,6 @@ impl App {
         if has_input_or_status {
             constraints.push(Constraint::Length(3));
         }
-        constraints.push(Constraint::Length(1));
 
         let vertical = Layout::default()
             .direction(Direction::Vertical)
@@ -632,10 +519,6 @@ impl App {
             }
         }
 
-        // Help bar (always visible, last slot)
-        let help_area = vertical[vertical.len() - 1];
-        let help = Paragraph::new(self.help_line());
-        frame.render_widget(help, help_area);
     }
 
     fn draw_tab_bar(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
@@ -950,31 +833,6 @@ mod tests {
         app.status_message = Some("Test message".to_string());
         app.handle_key_event(key_event(KeyCode::Char('a')));
         assert!(app.status_message.is_none());
-    }
-
-    #[test]
-    fn help_line_shows_edit_key_in_content_pane() {
-        let mut app = App::new(vec![], &Config::default());
-        app.active_pane = Pane::Content;
-        app.mode = Mode::Normal;
-        let help = app.help_line();
-        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(
-            help_text.contains("Edit"),
-            "Help line should show Edit in content pane: {help_text}"
-        );
-    }
-
-    #[test]
-    fn help_line_shows_save_cancel_in_edit_mode() {
-        let mut app = App::new(vec![], &Config::default());
-        app.mode = Mode::Edit;
-        let help = app.help_line();
-        let help_text: String = help.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(
-            help_text.contains("Save") && help_text.contains("Cancel"),
-            "Help line should show Save and Cancel in edit mode: {help_text}"
-        );
     }
 
     #[test]
