@@ -473,7 +473,7 @@ impl App {
                     ("Space", "Toggle"),
                     ("Tab", "Preview"),
                     ("w", "Export"),
-                    ("j/k", "Navigate"),
+                    ("↑/↓", "Navigate"),
                     ("q", "Quit"),
                 ]
             }
@@ -483,8 +483,8 @@ impl App {
             Screen::Settings if self.settings_state.merged_view => {
                 vec![
                     ("m", "Per-file"),
-                    ("j/k", "Scroll"),
-                    ("h/l", "Fold"),
+                    ("↑/↓", "Scroll"),
+                    ("←/→", "Fold"),
                     ("T", "Theme"),
                     ("q", "Quit"),
                 ]
@@ -493,8 +493,8 @@ impl App {
                 vec![
                     ("e", "Edit"),
                     ("m", "Merge"),
-                    ("j/k", "Scroll"),
-                    ("h/l", "Fold"),
+                    ("↑/↓", "Scroll"),
+                    ("←/→", "Fold"),
                     ("T", "Theme"),
                     ("q", "Quit"),
                 ]
@@ -504,7 +504,7 @@ impl App {
                     vec![
                         ("q", "Quit"),
                         ("Tab", "Files"),
-                        ("j/k", "Scroll"),
+                        ("↑/↓", "Scroll"),
                         ("e", "Edit"),
                         ("v", "Select"),
                         ("T", "Theme"),
@@ -514,12 +514,12 @@ impl App {
                     vec![
                         ("q", "Quit"),
                         ("Tab", "Content"),
-                        ("j/k", "Navigate"),
+                        ("↑/↓", "Navigate"),
                         ("T", "Theme"),
                     ]
                 }
                 Mode::VisualSelect => {
-                    vec![("j/k", "Extend"), ("s", "Save"), ("Esc", "Cancel")]
+                    vec![("↑/↓", "Extend"), ("s", "Save"), ("Esc", "Cancel")]
                 }
                 Mode::TitleInput => {
                     vec![("Enter", "Save"), ("Esc", "Cancel")]
@@ -536,7 +536,7 @@ impl App {
             }
             Screen::Library => {
                 vec![
-                    ("j/k", "Navigate"),
+                    ("↑/↓", "Navigate"),
                     ("e", "Edit"),
                     ("r", "Rename"),
                     ("d", "Delete"),
