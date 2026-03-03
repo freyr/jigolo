@@ -49,7 +49,12 @@ impl App {
     }
 
     /// Draws the full Library screen (snippet list top 40%, preview bottom 60%).
-    pub(crate) fn draw_library_screen(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+    pub(crate) fn draw_library_screen(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        if self.mode == Mode::Edit {
+            self.draw_edit_pane(frame, area);
+            return;
+        }
+
         let border_style = self.theme.active_border;
 
         let lib = match &self.library {
