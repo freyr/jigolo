@@ -64,12 +64,12 @@ impl App {
             return;
         }
 
-        let lib_split = Layout::default()
-            .direction(Direction::Vertical)
+        let panes = Layout::default()
+            .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(area);
 
-        // Snippet list (top)
+        // Left pane: snippet list
         let list_title = format!("Library ({} snippets)", lib.snippets.len());
         let list_lines: Vec<Line> = lib
             .snippets
@@ -90,9 +90,9 @@ impl App {
                 .border_style(border_style)
                 .title(list_title),
         );
-        frame.render_widget(list_widget, lib_split[0]);
+        frame.render_widget(list_widget, panes[0]);
 
-        // Preview (bottom)
+        // Right pane: snippet content
         let preview_content = lib
             .snippets
             .get(self.library_selected)
@@ -101,15 +101,15 @@ impl App {
         let preview_title = lib
             .snippets
             .get(self.library_selected)
-            .map(|s| format!("Preview: {}", s.title))
-            .unwrap_or_else(|| "Preview".to_string());
+            .map(|s| s.title.as_str())
+            .unwrap_or("Content");
         let preview_widget = Paragraph::new(preview_content).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
                 .title(preview_title),
         );
-        frame.render_widget(preview_widget, lib_split[1]);
+        frame.render_widget(preview_widget, panes[1]);
     }
 
     /// Handles Normal-mode keys on the Library screen.
