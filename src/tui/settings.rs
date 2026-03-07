@@ -100,6 +100,10 @@ impl App {
             KeyCode::Char('a') if !self.settings_state.merged_view => {
                 self.start_add_permission();
             }
+            KeyCode::Char('a') => {
+                self.status_message =
+                    Some("Add not available in merged view — press m to switch.".to_string());
+            }
             KeyCode::Char('q') => self.exit = true,
             KeyCode::Down | KeyCode::Char('j') => {
                 self.settings_state.cursor_down();
@@ -313,7 +317,6 @@ impl App {
         // Restore cursor position, clamped to new line count
         let max = self.settings_state.lines.len().saturating_sub(1);
         self.settings_state.cursor = saved_cursor.min(max);
-        self.settings_state.scroll = 0;
         self.settings_state.ensure_cursor_visible();
         true
     }

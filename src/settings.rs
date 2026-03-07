@@ -362,9 +362,11 @@ pub fn build_entry_map(lines: &[String], line_map: &SettingsLineMap) -> Vec<Sett
         // Content lines (indented, not headers)
         let trimmed = line.trim();
 
-        // Inside permission section
+        // Inside permission section — every non-empty content line is a permission item.
+        // Permission values can contain colons (e.g. "Bash(npm:*)"), so we only exit
+        // the section on blank lines or new headers (handled above).
         if let Some(ref cat) = current_permission_category {
-            if !trimmed.is_empty() && !trimmed.contains(':') {
+            if !trimmed.is_empty() {
                 entries.push(SettingsEntry::PermissionItem {
                     file_idx,
                     category: cat.clone(),
@@ -372,7 +374,6 @@ pub fn build_entry_map(lines: &[String], line_map: &SettingsLineMap) -> Vec<Sett
                 });
                 continue;
             }
-            // New key:value line means we left the permission section
             current_permission_category = None;
         }
 
@@ -585,6 +586,9 @@ fn format_mcp_servers(val: &serde_json::Value, lines: &mut Vec<String>) {
         }
     };
 
+    if obj.is_empty() {
+        return;
+    }
     lines.push("  ▾ MCP Servers:".to_string());
     for (name, config) in obj {
         if let Some(cmd) = config.get("command") {
@@ -1029,6 +1033,27 @@ mod tests {
             .filter(|e| matches!(e, SettingsEntry::Blank))
             .count();
         assert!(blank_count > 0, "Should have blank separators");
+    }
+
+    #[test]
+    fn entry_map_handles_permission_values_with_colons() {
+        let collection =
+            collection_from_json(r#"{"permissions":{"allow":["Bash(npm:*)","Read"]}}"#);
+        let (lines, line_map) = format_settings_with_map(&collection);
+        let entries = build_entry_map(&lines, &line_map);
+
+        let perm_items: Vec<_> = entries
+            .iter()
+            .filter_map(|e| match e {
+                SettingsEntry::PermissionItem { value, .. } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            perm_items,
+            vec!["Bash(npm:*)", "Read"],
+            "Permission values with colons should be classified as PermissionItem"
+        );
     }
 
     #[test]
